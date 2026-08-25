@@ -154,6 +154,16 @@ async function buildM(sock, M, db, loader) {
   return m
 }
 
+// bucket rate-limit dibersihkan berkala supaya Map tidak tumbuh selamanya
+// (satu entri per pengirim unik, sebelumnya tidak pernah dihapus)
+function pruneRateBuckets(now = Date.now()) {
+  for (const [k, v] of rateBucket.entries()) {
+    if (now - v.start > 120000) rateBucket.delete(k)
+  }
+  return rateBucket.size
+}
+setInterval(pruneRateBuckets, 120000).unref()
+
 function checkRateLimit(sender) {
   const now = Date.now()
   let bucket = rateBucket.get(sender)
@@ -292,4 +302,16 @@ async function handle(sock, db, loader, M) {
   }
 }
 
-module.exports = { handle, buildM }
+/**
+ * Batalkan cache metadata sebuah grup.
+ * Dipanggil saat ada join/leave/promote/demote supaya pemeriksaan admin
+ * tidak memakai data lama sampai 60 detik.
+ */
+function invalidateMeta(jid) {
+  if (jid) metaCache.del(jid)
+}
+
+module.exports = { handle, buildM, invalidateMeta }
+// hook kecil untuk test
+module.exports._rateBucket = rateBucket
+module.exports._pruneRateBuckets = pruneRateBuckets

@@ -76,16 +76,32 @@ class Database {
   }
 
   load() {
-    try {
-      if (fs.existsSync(this.filePath)) {
-        const raw = fs.readFileSync(this.filePath, 'utf8')
-        const parsed = JSON.parse(raw)
+    // Urutan: file utama -> cadangan .bak -> default.
+    // Sebelumnya file yang korup langsung dibuang dan diganti default, jadi
+    // satu kali gagal tulis (proses mati / disk penuh) menghapus seluruh data
+    // bot (owner, warning, feedback, marketing, dll) tanpa jejak.
+    const candidates = [this.filePath, this.filePath + '.bak']
+    for (const file of candidates) {
+      try {
+        if (!fs.existsSync(file)) continue
+        const parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
         this.data = this._deepMerge(JSON.parse(JSON.stringify(DEFAULT_DB)), parsed)
+        if (file !== this.filePath) {
+          console.warn(`[DB] file utama rusak, data dipulihkan dari ${path.basename(file)}`)
+        }
+        return this.data
+      } catch (e) {
+        console.error(`[DB] gagal load ${path.basename(file)}:`, e.message)
+        // simpan bukti supaya bisa dipulihkan manual, jangan ditimpa
+        try {
+          const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+          fs.copyFileSync(file, `${file}.corrupt-${stamp}`)
+          console.error(`[DB] salinan file rusak disimpan: ${path.basename(file)}.corrupt-${stamp}`)
+        } catch (_) {}
       }
-    } catch (e) {
-      console.error('[DB] gagal load, memakai default:', e.message)
-      this.data = JSON.parse(JSON.stringify(DEFAULT_DB))
     }
+    console.error('[DB] tidak ada data yang bisa dipakai, memulai dengan database kosong.')
+    this.data = JSON.parse(JSON.stringify(DEFAULT_DB))
     return this.data
   }
 
@@ -108,7 +124,18 @@ class Database {
   _write() {
     try {
       fs.mkdirSync(path.dirname(this.filePath), { recursive: true })
-      fs.writeFileSync(this.filePath, JSON.stringify(this.data, null, 2))
+      // 1) simpan isi lama yang masih valid sebagai cadangan
+      try {
+        if (fs.existsSync(this.filePath)) {
+          JSON.parse(fs.readFileSync(this.filePath, 'utf8')) // validasi dulu
+          fs.copyFileSync(this.filePath, this.filePath + '.bak')
+        }
+      } catch (_) {}
+      // 2) tulis atomik: ke .tmp lalu rename, supaya file utama tidak pernah
+      //    setengah jadi kalau proses mati di tengah penulisan
+      const tmp = this.filePath + '.tmp'
+      fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2))
+      fs.renameSync(tmp, this.filePath)
     } catch (e) {
       console.error('[DB] gagal save:', e.message)
     }

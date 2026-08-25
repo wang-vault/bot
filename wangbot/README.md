@@ -182,7 +182,8 @@ Jika tetap `@lid` di `.id`, berarti nomor asli tidak tersedia di metadata grup (
 WangBot punya test yang benar-benar menjalankan kode (bukan sekadar cek sintaks):
 
 ```bash
-npm test                 # 21 assertion logika inti (moderasi, marketing, broadcast, event grup, keamanan owner)
+npm test                 # logika inti (moderasi, marketing, broadcast, event grup, keamanan owner)
+                         # + lapisan plumbing (database, handler, parser pesan) — total 42 assertion
 npm run fake:panel       # API Pterodactyl tiruan di :8791 (2 node) untuk uji monitoring
 npm run test:dryrun      # jalankan SEMUA command lewat handler asli + sock palsu, lapor error/balasan
 
@@ -191,7 +192,7 @@ npm run fake:panel &
 FAKE_PANEL=http://127.0.0.1:8791 FAKE_WEBSITE=http://127.0.0.1:8791 npm test   # -> 24 assertion
 ```
 
-Hasil terakhir: `24/24 lulus`, `82 command diuji — 0 error`.
+Hasil terakhir: `24/24` (core) + `21/21` (plumbing) lulus, `82 command diuji — 0 error`.
 Rincian temuan & perbaikan: **[`AUDIT.md`](AUDIT.md)**.
 
 ---

@@ -2,6 +2,15 @@ const config = require('../config')
 const func = require('../lib/func')
 const logger = require('../lib/logger')
 
+// handler menyimpan cache metadata grup (TTL 60 detik); dibatalkan di sini
+// supaya perubahan anggota/admin langsung terbaca. require() ditaruh di dalam
+// fungsi agar tidak ada dependensi melingkar saat module dimuat.
+function invalidateMeta(jid) {
+  try {
+    require('../handler').invalidateMeta(jid)
+  } catch (_) {}
+}
+
 function fillTemplate(text, vars) {
   return (text || '')
     .replace(/@user/g, `@${vars.user}`)
@@ -24,6 +33,7 @@ async function handleParticipantsUpdate(sock, db, { id, participants, action }) 
     } catch (_) {}
 
     const cleanParticipants = (participants || []).filter(Boolean)
+    invalidateMeta(id) // anggota/admin berubah -> cache lama tidak valid
 
     if (action === 'add') {
       logger.join(`JOIN ${subject} +${cleanParticipants.length}`)

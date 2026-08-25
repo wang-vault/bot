@@ -10,9 +10,10 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "test": "node test/core.test.js",
+    "test": "node test/core.test.js && node test/plumbing.test.js",
     "test:dryrun": "node test/dryrun.js",
-    "fake:panel": "node test/fake-panel.js"
+    "fake:panel": "node test/fake-panel.js",
+    "test:plumbing": "node test/plumbing.test.js"
   },
   "keywords": [
     "whatsapp",

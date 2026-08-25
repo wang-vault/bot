@@ -4,9 +4,14 @@ const { downloadContentFromMessage } = require('@whiskeysockets/baileys')
 function getBody(message) {
   if (!message) return ''
   const m = message
+  // WhatsApp versi baru membungkus gambar/dokumen ber-caption ke dalam
+  // documentWithCaptionMessage -> tanpa ini caption ".sticker" tidak terbaca
+  const dwc = m.documentWithCaptionMessage?.message
   return (
     m.conversation ||
     m.extendedTextMessage?.text ||
+    dwc?.imageMessage?.caption ||
+    dwc?.documentMessage?.caption ||
     m.imageMessage?.caption ||
     m.videoMessage?.caption ||
     m.listResponseMessage?.singleSelectReply?.selectedRowId ||
@@ -26,6 +31,13 @@ function getMediaType(message) {
   if (message.audioMessage) return { type: 'audio', msg: message.audioMessage, isViewOnce: false }
   if (message.documentMessage) return { type: 'document', msg: message.documentMessage, isViewOnce: false }
   if (message.ptvMessage) return { type: 'video', msg: message.ptvMessage, isViewOnce: false }
+
+  // gambar/dokumen ber-caption (wrapper baru WhatsApp)
+  const dwc = message.documentWithCaptionMessage?.message
+  if (dwc) {
+    if (dwc.imageMessage) return { type: 'image', msg: dwc.imageMessage, isViewOnce: false }
+    if (dwc.documentMessage) return { type: 'document', msg: dwc.documentMessage, isViewOnce: false }
+  }
 
   // viewOnce wrappers
   const vo =

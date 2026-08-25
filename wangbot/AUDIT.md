@@ -14,6 +14,7 @@ Cara verifikasi: **dijalankan sungguhan**, bukan dibaca saja.
 | Uji logika inti (24 assertion) | `npm test` | **24/24 lulus** setelah perbaikan (sebelumnya 15/24) |
 | Uji monitoring | `test/fake-panel.js` (API Pterodactyl tiruan, 2 node) | output dibandingkan angka mentah |
 | Uji media | `sharp` asli → `textToImage`, `memeImage`, `makeSticker` | PNG 512×512 → stiker WebP (magic `RIFF`) OK |
+| Uji lapisan plumbing (database/handler/parser) | `npm run test:plumbing` | 21 assertion |
 | Uji celah keamanan | skrip PoC user asing → `.addowner` → `.exec` | **terbukti RCE**, kini tertutup |
 
 Yang **tidak** bisa diverifikasi di sini: koneksi WhatsApp sungguhan (butuh scan QR), panel Pterodactyl asli
@@ -130,6 +131,61 @@ Verifikasi: `node test/dryrun.js` (alias) → **tidak ada alias mati / nama dupl
 
 ---
 
+## 🟠 Putaran 2 — Lapisan plumbing (database, handler, parser)
+
+Setelah PR pertama dibuka, audit dilanjutkan ke bagian yang tadinya hanya dibaca.
+
+### 19. Database korup = seluruh data bot hilang diam-diam (diperbaiki)
+`src/database.js` — `load()` langsung memakai default bila `JSON.parse` gagal, lalu `save()` pertama
+**menimpa** file itu. Artinya satu kali tulis yang gagal (proses mati, disk penuh, PM2 kill -9)
+menghapus owner, warning, feedback, konfigurasi marketing, dsb. tanpa jejak.
+
+Bukti: file diisi data → dirusak jadi JSON terpotong → `new Database()` menghasilkan
+`owners: []` dan log `[DB] gagal load, memakai default`.
+
+**Perbaikan**:
+* penulisan **atomik** (tulis `.tmp` lalu `rename`) — file utama tidak pernah setengah jadi;
+* setiap save yang valid disalin ke `database.json.bak`;
+* saat load: file utama → `.bak` → baru default; file yang korup **disalin** ke
+  `*.corrupt-<timestamp>` sebagai bukti, tidak ditimpa.
+
+Hasil uji: file utama korup → data owner & setting grup **pulih dari `.bak`**; kalau keduanya korup
+→ mulai kosong tanpa crash, dan bukti korup tersimpan. ✅
+
+### 20. Caption gambar/dokumen versi baru WhatsApp tidak terbaca (diperbaiki)
+`src/lib/message.js` tidak mengenal pembungkus `documentWithCaptionMessage` (dipakai WhatsApp versi baru
+saat gambar/dokumen dikirim dengan caption). Akibatnya `.sticker`, `.smeme`, `.wm`, `.restore` yang
+dipakai dengan me-reply pesan semacam itu tidak melihat caption maupun medianya.
+
+Bukti: `getBody({documentWithCaptionMessage:{message:{imageMessage:{caption:'.sticker'}}}})` → `""`
+dan `getMediaType(...)` → `null`. Setelah diperbaiki: `".sticker"` dan `{type:'image'}`. ✅
+
+### 21. Bucket rate-limit tidak pernah dibersihkan (memory leak, diperbaiki)
+`src/handler.js` menyimpan satu entri `Map` per pengirim unik di `rateBucket` dan tidak pernah dihapus
+(berbeda dengan `floodCount` dan `cooldown` yang punya pembersih). Bot di banyak grup akan menumpuk
+entri selamanya.
+
+Bukti: 5.000 pengirim unik → 5.000 entri tetap ada. **Perbaikan**: `pruneRateBuckets()` dijalankan
+tiap 2 menit (`.unref()`), membuang bucket berumur > 2 menit. Setelah 5 menit simulasi: 0 entri. ✅
+
+### 22. Status admin basi sampai 60 detik setelah promote/demote (diperbaiki)
+`src/handler.js` meng-cache metadata grup selama 60 detik per jid, dan tidak ada yang membatalkannya
+saat ada join/leave/promote/demote. Jadi member yang baru dipromosikan masih dianggap bukan admin
+(command admin ditolak), dan sebaliknya `.kick` bisa menolak karena masih menganggap target admin.
+
+Bukti: sebelum promote `isAdmin=false`; setelah promote **tanpa** invalidasi tetap `false`;
+setelah `invalidateMeta()` → `true`.
+**Perbaikan**: `handler.invalidateMeta(jid)` diekspor dan dipanggil dari
+`src/events/groups.js` setiap ada `group-participants.update`. ✅
+
+### ✅ Yang teruji benar (tidak perlu diubah)
+* Resolusi **LID**: pengirim `@lid` di grup "sembunyikan nomor" di-resolve ke nomor asli, dan
+  **owner maupun admin tetap dikenali** setelah resolusi.
+* Anti spam, anti link + whitelist, warn → autokick + reset warning, welcome/goodbye + placeholder
+  `@user`/`@subject`, persistensi prefix lintas restart.
+
+---
+
 ## 🔵 Catatan yang **tidak** saya ubah (butuh keputusan Anda)
 
 | # | Temuan | Kenapa tidak diubah |
@@ -148,13 +204,14 @@ Verifikasi: `node test/dryrun.js` (alias) → **tidak ada alias mati / nama dupl
 ```bash
 cd wangbot
 npm install                 # (lihat D1 bila gagal di sharp)
-npm test                    # 21 assertion (24 bila FAKE_PANEL diisi) — logika inti
+npm test                    # core (21 assertion, 24 bila FAKE_PANEL diisi) + plumbing (21 assertion)
+npm run test:plumbing       # khusus lapisan database/handler/parser
 npm run test:dryrun         # jalankan 82 command lewat handler asli, lapor error/balasan
 npm run fake:panel          # API Pterodactyl tiruan di :8791 untuk uji monitoring
 FAKE_PANEL=http://127.0.0.1:8791 FAKE_WEBSITE=http://127.0.0.1:8791 npm test
 ```
 
-Terakhir dijalankan: `npm test` → **24/24 lulus** (1,6 detik), `npm run test:dryrun` → **82 command, 0 error**.
+Terakhir dijalankan: `npm test` → **24/24** (core) + **21/21** (plumbing) lulus, `npm run test:dryrun` → **82 command, 0 error**.
 
 ## 📝 Daftar file yang diubah
 
@@ -179,6 +236,10 @@ src/commands/cs/listfeedback.js        (#17)
 src/commands/cs/listlaporan.js         (#17)
 src/commands/owner/exec.js             (#16)
 src/commands/owner/gitpull.js          (#16)
+src/database.js                        (#19 data korup + tulis atomik)
+src/lib/message.js                     (#20 documentWithCaptionMessage)
+src/handler.js                         (#21 leak rate-limit, #22 invalidateMeta)
+src/events/groups.js                   (#22 batalkan cache saat anggota berubah)
 package.json                           (script test)
-test/core.test.js, test/dryrun.js, test/fake-panel.js   (baru)
+test/core.test.js, test/plumbing.test.js, test/dryrun.js, test/fake-panel.js   (baru)
 ```
