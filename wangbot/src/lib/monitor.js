@@ -1,6 +1,7 @@
 const config = require('../config')
 const logger = require('./logger')
 const Panel = require('./panel')
+const Mc = require('./mc')
 
 // Menentukan target notifikasi alert
 function notifyTarget(db) {
@@ -12,16 +13,24 @@ function notifyTarget(db) {
 async function sendAlert(db, sock, text) {
   const target = notifyTarget(db)
   if (!target) return
+  return sendTo(sock, target, text)
+}
+
+async function sendTo(sock, target, text) {
+  if (!target || !text) return
   try {
     await sock.sendMessage(target, { text })
   } catch (e) {
-    logger.error('sendAlert', e)
+    logger.error('sendTo ' + target, e)
   }
 }
 
 let _running = false
 let _timer = null
 let _firstTimer = null
+let _mcRunning = false
+let _mcTimer = null
+let _mcFirstTimer = null
 
 // true saat nilai melewati/menyentuh threshold dan sebelumnya masih di bawah
 // (atau belum pernah tercatat sama sekali -> prev == null)
@@ -140,6 +149,32 @@ async function tick(sock, db) {
   }
 }
 
+
+// ==========================================================================
+// Monitoring server Minecraft pelanggan (scheduler terpisah, interval sendiri)
+// ==========================================================================
+async function tickMc(sock, db) {
+  if (_mcRunning) return
+  _mcRunning = true
+  try {
+    const res = await Mc.monitorTick(db)
+    if (!res.checked) return
+    for (const a of res.alerts) {
+      await sendTo(sock, a.jid, '🚨 *MONITORING MINECRAFT - WANGBOT*\n\n' + a.text)
+    }
+    if (res.adminAlerts.length) {
+      const admin = notifyTarget(db)
+      if (admin) await sendTo(sock, admin, '🎮 *MC - ' + res.adminAlerts.length + ' peristiwa*\n' + res.adminAlerts.join('\n'))
+    }
+    logger.monitor(`mc cek OK — ${res.checked} server, ${res.down} down`)
+    db.save()
+  } catch (e) {
+    logger.error('mc monitor tick', e)
+  } finally {
+    _mcRunning = false
+  }
+}
+
 const Monitor = {
   start(sock, db) {
     this.stop()
@@ -149,15 +184,31 @@ const Monitor = {
     // reconnect, agar tick tidak jalan dengan sock lama)
     _firstTimer = setTimeout(() => tick(sock, db), 10000)
     _timer = setInterval(() => tick(sock, db), ms)
+
+    if (config.mcEnabled) {
+      const mcMs = Math.max(1, config.mcInterval) * 60 * 1000
+      logger.info(`Monitoring Minecraft aktif setiap ${config.mcInterval} menit`)
+      // mulai sedikit lebih lambat dari tick node supaya tidak bertabrakan
+      _mcFirstTimer = setTimeout(() => tickMc(sock, db), 15000)
+      _mcTimer = setInterval(() => tickMc(sock, db), mcMs)
+    }
   },
   stop() {
     if (_timer) clearInterval(_timer)
     if (_firstTimer) clearTimeout(_firstTimer)
+    if (_mcTimer) clearInterval(_mcTimer)
+    if (_mcFirstTimer) clearTimeout(_mcFirstTimer)
     _timer = null
     _firstTimer = null
+    _mcTimer = null
+    _mcFirstTimer = null
   },
   now(sock, db) {
     return tick(sock, db)
+  },
+  // cek server Minecraft sekarang (dipakai .mcadmin check & test)
+  nowMc(sock, db) {
+    return tickMc(sock, db)
   },
 }
 

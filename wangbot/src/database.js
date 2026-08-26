@@ -62,8 +62,14 @@ const DEFAULT_DB = {
   },
   monitor: {
     lastNodeState: {},
+    lastMcState: {}, // identifier server MC -> { online, ramPct, cpuPct, down, since }
     websiteDown: false,
     panelDown: false,
+  },
+  // Monitoring server Minecraft pelanggan (lihat src/lib/mc.js)
+  minecraft: {
+    entries: {}, // jid pelanggan -> { email, token (Client API), servers: [id] }
+    servers: {}, // identifier -> { name, host, port, rcon, monitor, ownerJid, ... }
   },
 }
 
