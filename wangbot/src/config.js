@@ -53,11 +53,31 @@ const config = {
   // Pterodactyl panel
   panelApiUrl: (process.env.PANEL_API_URL || '').replace(/\/+$/, ''),
   panelApiToken: process.env.PANEL_API_TOKEN || '',
+  // Client API key (Account -> API Credentials). Dipakai monitoring PER SERVER
+  // (Minecraft pelanggan). Kosongkan bila hanya mau monitoring node.
+  panelClientToken: process.env.PANEL_CLIENT_TOKEN || '',
   monitorNotify: process.env.MONITOR_NOTIFY || '',
   monitorInterval: parseInt(process.env.MONITOR_INTERVAL || '5', 10),
   alertRam: parseInt(process.env.ALERT_RAM_THRESHOLD || '90', 10),
   alertCpu: parseInt(process.env.ALERT_CPU_THRESHOLD || '90', 10),
   alertDisk: parseInt(process.env.ALERT_DISK_THRESHOLD || '90', 10),
+
+  // ===== Monitoring server Minecraft =====
+  mcEnabled: (process.env.MC_MONITOR || '1') !== '0',
+  mcInterval: parseInt(process.env.MC_MONITOR_INTERVAL || '2', 10), // menit
+  mcAlertRam: parseInt(process.env.MC_ALERT_RAM_THRESHOLD || '90', 10),
+  mcAlertCpu: parseInt(process.env.MC_ALERT_CPU_THRESHOLD || '90', 10),
+  // Server yang "baru pertama kali dipantau" tidak langsung diteriaki down,
+  // supaya bot yang baru dinyalakan tidak membanjiri pelanggan dengan alert.
+  mcGraceTicks: parseInt(process.env.MC_GRACE_TICKS || '1', 10),
+  mcMaxPerUser: parseInt(process.env.MC_MAX_SERVERS_PER_USER || '5', 10),
+  // Selang pengingat selama server masih down (menit)
+  mcDownRemind: parseInt(process.env.MC_DOWN_REMIND_MINUTES || '30', 10),
+  mcPingTimeout: parseInt(process.env.MC_PING_TIMEOUT || '5000', 10), // ms
+  // Kirim alert down pelanggan juga ke admin? (1 = ya)
+  mcNotifyAdmin: (process.env.MC_NOTIFY_ADMIN || '1') !== '0',
+  // Izinkan console/power command dipakai di grup? (default tidak)
+  mcConsoleInGroup: (process.env.MC_CONSOLE_IN_GROUP || '0') === '1',
 
   // Keamanan broadcast (anti banned/flag WhatsApp). Jeda antar pesan & batas per batch.
   broadcastDelay: parseFloat(process.env.BROADCAST_DELAY || '5'), // detik antar pengiriman

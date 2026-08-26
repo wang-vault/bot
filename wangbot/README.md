@@ -13,6 +13,7 @@ Bot WhatsApp multi-fitur berbasis **Node.js** + **Baileys**, dirancang untuk kom
 | 👋 **Community** | Auto Welcome, Auto Goodbye, Auto Rules, Auto Website, Auto Link Grup, AFK + Auto Remove AFK, Auto Reply FAQ |
 | 🛡️ **Moderasi** | Anti Link, Anti Promo, Anti Spam, Anti Flood, Anti Virtex, Anti Tag All, Auto Delete, Warning System, Auto Kick (opsional), Whitelist Link & Member, ON/OFF per grup |
 | 📊 **Monitoring Hosting** | Status Website & Panel, Status/Ping Node, Resource (CPU/RAM/Disk), Spesifikasi Node, Jumlah Server Aktif |
+| 🎮 **Server Minecraft** | Status server MC pelanggan (SLP), Player Online, MOTD & Versi, Resource per Server, Alert Down/Otomatis Pulih, Restart & Power, Console Command (panel/RCON) |
 | 📦 **Informasi Layanan** | Paket Hosting, VPS, Dedicated Server, Public IP, Kontak Admin, Website, Link Grup |
 | 📢 **Marketing** | Auto Promotion, Daftar Grup Promosi, Multi Template, Jadwal & Interval, Pause/Resume, Kirim Manual, Statistik |
 | 🖼️ **Media** | Sticker dari Gambar, Sticker Gambar + Teks (meme), Sticker dari Teks, Watermark |
@@ -24,7 +25,7 @@ Bot WhatsApp multi-fitur berbasis **Node.js** + **Baileys**, dirancang untuk kom
 | 📂 **Logging** | Log Error, Command, Join/Leave, Promosi |
 | 🔐 **Keamanan** | Owner/Admin Only, Rate Limit, Blacklist User & Grup |
 | 🎫 **Customer Service** | FAQ, Kontak, Jam Operasional, Feedback, Laporan |
-| 🚨 **Monitoring Otomatis** | Notif Node Offline, Website/Panel Down, Alert RAM/CPU/Disk tinggi, Maintenance Mode |
+| 🚨 **Monitoring Otomatis** | Notif Node Offline, Website/Panel Down, Alert RAM/CPU/Disk tinggi, Maintenance Mode, Server Minecraft Down/Pulih ke pelanggan |
 | 👑 **Owner** | Eval JS, Exec Terminal, Restart, Git Pull, Backup/Restore DB, Broadcast, Join/Leave Grup, Add/Del Owner |
 | 🎮 **Games** | Tebak Angka, Suit, Dadu, Coin Flip, Slot |
 
@@ -104,9 +105,9 @@ wangbot/
     ├── connection.js     # Koneksi WhatsApp (Baileys) + reconnect
     ├── handler.js        # Router pesan, permission, rate-limit, AFK, FAQ
     ├── events/groups.js  # Welcome/Goodbye/Rules otomatis
-    ├── lib/              # func, message, panel, monitor, marketing,
-    │                     #   moderation, sticker, layanan, logger
-    └── commands/         # 80 command dalam 14 folder kategori
+    ├── lib/              # func, message, panel, monitor, mc, minecraft,
+    │                     #   marketing, moderation, sticker, layanan, logger
+    └── commands/         # 92 command dalam 15 folder kategori
 ```
 
 ---
@@ -182,9 +183,11 @@ Jika tetap `@lid` di `.id`, berarti nomor asli tidak tersedia di metadata grup (
 WangBot punya test yang benar-benar menjalankan kode (bukan sekadar cek sintaks):
 
 ```bash
-npm test                 # logika inti (moderasi, marketing, broadcast, event grup, keamanan owner)
-                         # + lapisan plumbing (database, handler, parser pesan) — total 42 assertion
-npm run fake:panel       # API Pterodactyl tiruan di :8791 (2 node) untuk uji monitoring
+npm test                 # core + plumbing + Minecraft — total 112 assertion
+npm run test:mc          # khusus Minecraft: 70 assertion (SLP, RCON, Client API, alert, command)
+npm run fake:panel       # API Pterodactyl Application tiruan di :8791 (2 node)
+npm run fake:mc          # server Minecraft tiruan (SLP + RCON)
+npm run fake:client-panel# Pterodactyl Client API tiruan (resource per server)
 npm run test:dryrun      # jalankan SEMUA command lewat handler asli + sock palsu, lapor error/balasan
 
 # lengkap dengan monitoring:
@@ -192,8 +195,9 @@ npm run fake:panel &
 FAKE_PANEL=http://127.0.0.1:8791 FAKE_WEBSITE=http://127.0.0.1:8791 npm test   # -> 24 assertion
 ```
 
-Hasil terakhir: `24/24` (core) + `21/21` (plumbing) lulus, `82 command diuji — 0 error`.
+Hasil terakhir: `21/21` (core) + `21/21` (plumbing) + `70/70` (Minecraft) lulus.
 Rincian temuan & perbaikan: **[`AUDIT.md`](AUDIT.md)**.
+Panduan fitur server Minecraft: **[`docs/MINECRAFT.md`](docs/MINECRAFT.md)**.
 
 ---
 © WangStore — MIT License

@@ -13,6 +13,7 @@ const CATEGORY_META = {
   media: { title: 'Media', emoji: '🖼️' },
   viewonce: { title: 'View Once', emoji: '👁️' },
   monitoring: { title: 'Monitoring Hosting', emoji: '📊' },
+  mc: { title: 'Server Minecraft', emoji: '🎮' },
   marketing: { title: 'Marketing', emoji: '📢' },
   broadcast: { title: 'Broadcast', emoji: '📡' },
   cs: { title: 'Customer Service', emoji: '🎫' },

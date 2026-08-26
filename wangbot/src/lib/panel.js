@@ -163,8 +163,163 @@ const Panel = {
       activeServers,
     }
   },
+
+  // ==========================================================================
+  // CLIENT API (/api/client) — dipakai untuk monitoring PER SERVER, misalnya
+  // server Minecraft pelanggan. Butuh CLIENT API key (Account -> API
+  // Credentials), berbeda dengan Application key yang dipakai di atas.
+  //
+  // Keuntungan keamanan: Client key hanya bisa melihat server milik akun itu
+  // sendiri, jadi hak akses pelanggan dijamin oleh panel, bukan oleh bot.
+  // ==========================================================================
+
+  clientConfigured() {
+    return !!(config.panelApiUrl && config.panelClientToken)
+  },
+
+  // Client API menerima short uuid (8 karakter, `identifier`). Kalau yang
+  // diberikan uuid panjang, ambil 8 karakter pertamanya.
+  toIdentifier(idOrUuid) {
+    const s = String(idOrUuid || '').trim()
+    return s.length > 8 ? s.slice(0, 8) : s
+  },
+
+  async clientFetch(urlPath, options = {}) {
+    if (!config.panelApiUrl || !config.panelClientToken) return null
+    const url = `${config.panelApiUrl}${urlPath}`
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), 15000)
+    try {
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${config.panelClientToken}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        signal: ctrl.signal,
+        method: options.method || 'GET',
+        body: options.body ? JSON.stringify(options.body) : undefined,
+      })
+      if (!res.ok) return { error: friendlyError(res.status), status: res.status }
+      const text = await res.text()
+      try {
+        return text ? JSON.parse(text) : { ok: true }
+      } catch (_) {
+        return { ok: true }
+      }
+    } catch (e) {
+      return { error: e.name === 'AbortError' ? 'timeout' : e.message }
+    } finally {
+      clearTimeout(t)
+    }
+  },
+
+  // Daftar server yang bisa diakses pemilik token ini
+  async clientListServers() {
+    const data = await this.clientFetch('/api/client?include=allocations')
+    if (!data) return { error: 'PANEL_CLIENT_TOKEN belum diisi di .env' }
+    if (data.error) return { error: data.error }
+    return (data.data || []).map((s) => normalizeClientServer(s.attributes, s))
+  },
+
+  async clientServer(idOrUuid) {
+    const id = this.toIdentifier(idOrUuid)
+    const data = await this.clientFetch(`/api/client/servers/${id}?include=allocations`)
+    if (!data) return { error: 'PANEL_CLIENT_TOKEN belum diisi di .env' }
+    if (data.error) return { error: data.error }
+    return normalizeClientServer(data.attributes, data)
+  },
+
+  // CPU / RAM / disk / power state sebuah server (butuh Client key)
+  async clientResources(idOrUuid) {
+    const id = this.toIdentifier(idOrUuid)
+    const data = await this.clientFetch(`/api/client/servers/${id}/resources`)
+    if (!data) return { error: 'PANEL_CLIENT_TOKEN belum diisi di .env' }
+    if (data.error) return { error: data.error }
+    return clientResourceSummary(data.attributes)
+  },
+
+  // start | stop | restart | kill
+  async clientPower(idOrUuid, signal) {
+    const id = this.toIdentifier(idOrUuid)
+    const allowed = ['start', 'stop', 'restart', 'kill']
+    if (!allowed.includes(signal)) return { error: 'signal harus: ' + allowed.join(', ') }
+    const res = await this.clientFetch(`/api/client/servers/${id}/power`, {
+      method: 'POST',
+      body: { signal },
+    })
+    if (!res) return { error: 'PANEL_CLIENT_TOKEN belum diisi di .env' }
+    if (res.error) return { error: res.error }
+    return { ok: true, signal }
+  },
+
+  // Kredensial websocket console (dipakai lib/mc.js untuk kirim command)
+  async clientConsoleUrl(idOrUuid) {
+    const id = this.toIdentifier(idOrUuid)
+    const data = await this.clientFetch(`/api/client/servers/${id}/websocket`)
+    if (!data) return { error: 'PANEL_CLIENT_TOKEN belum diisi di .env' }
+    if (data.error) return { error: data.error }
+    if (!data.data || !data.data.socket) return { error: 'panel tidak mengembalikan socket url' }
+    return { socket: data.data.socket, token: data.data.token }
+  },
+}
+
+// Panel mengirim memory/disk dalam MB dan cpu dalam persen (100 = 1 core).
+// Nilai 0 berarti "unlimited", sehingga persentase tidak bisa dihitung.
+function clientResourceSummary(attributes) {
+  const res = (attributes && attributes.resources) || {}
+  const lim = res.limits || {}
+  const memoryMB = res.memory_bytes ? Math.round(res.memory_bytes / 1024 / 1024) : 0
+  const diskMB = res.disk_bytes ? Math.round(res.disk_bytes / 1024 / 1024) : 0
+  const memoryLimitMB = lim.memory || 0
+  const diskLimitMB = lim.disk || 0
+  const cpuLimit = lim.cpu || 0
+  return {
+    state: attributes ? attributes.current_state : null, // running / offline / starting
+    memoryMB,
+    diskMB,
+    cpuPctRaw: res.cpu_absolute != null ? Math.round(res.cpu_absolute * 10) / 10 : 0,
+    uptimeMs: res.uptime || 0,
+    memoryLimitMB,
+    diskLimitMB,
+    cpuLimit,
+    ramPct: memoryLimitMB ? Math.min(100, Math.round((memoryMB / memoryLimitMB) * 100)) : null,
+    diskPct: diskLimitMB ? Math.min(100, Math.round((diskMB / diskLimitMB) * 100)) : null,
+    cpuPct: cpuLimit ? Math.min(100, Math.round((res.cpu_absolute || 0) / cpuLimit * 100)) : null,
+  }
+}
+
+function normalizeClientServer(a, wrapper) {
+  const allocs =
+    (a.relationships && a.relationships.allocations && a.relationships.allocations.data) ||
+    (wrapper && wrapper.relationships && wrapper.relationships.allocations && wrapper.relationships.allocations.data) ||
+    []
+  const def = allocs.find((x) => x.attributes && x.attributes.is_default) || allocs[0]
+  const da = def ? def.attributes : null
+  const limits = a.limits || {}
+  return {
+    identifier: a.identifier,
+    uuid: a.uuid,
+    name: a.name,
+    description: a.description || '',
+    node: a.node || '',
+    sftp: a.sftp_details || null,
+    eggName: (a.egg_object && (a.egg_object.name || a.egg_object.description)) || '',
+    ownerUuid: a.owner || a.user || '',
+    state: a.status || null,
+    suspended: !!a.is_suspended,
+    memoryLimitMB: limits.memory || 0,
+    diskLimitMB: limits.disk || 0,
+    cpuLimit: limits.cpu || 0,
+    // host untuk SLP ping: pakai allocation default (IP node + port game)
+    mcHost: da ? da.ip || da.ip_alias || '' : '',
+    mcPort: da ? da.port : null,
+    allocations: allocs.map((x) => x.attributes).filter(Boolean),
+  }
 }
 
 Panel.humanMB = humanMB
+Panel.clientResourceSummary = clientResourceSummary
+Panel.normalizeClientServer = normalizeClientServer
 
 module.exports = Panel
