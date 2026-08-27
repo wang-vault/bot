@@ -10,50 +10,52 @@
 //  supaya tetap ada jalan "bootstrap": kalau bot BELUM punya
 //  owner sama sekali (OWNER_NUMBER kosong & db.owners kosong),
 //  klaim pertama diizinkan agar bot tetap bisa di-setup.
+//
+//  Input selalu NOMOR (0812xxx / +62 812-xxx / 62812xxx), bukan JID.
+//  Bot yang menormalkan sendiri: 0812xxx -> 62812xxx@s.whatsapp.net.
 // ============================================================
-const { toJid } = require('../../config')
-
-function jidFromInput(m) {
-  if (m.mentionedJid && m.mentionedJid[0]) return m.mentionedJid[0]
-  if (m.quoted && m.quoted.sender) return m.quoted.sender
-  if (m.args && m.args.trim()) {
-    const n = m.args.replace(/[^0-9]/g, '')
-    if (!n) return ''
-    return toJid(n)
-  }
-  return m.sender // tanpa argumen -> JID pengirim apa adanya
-}
-
 module.exports = {
   name: 'addowner',
   aliases: ['setowner', 'claimowner', 'claim', 'jadikanowner'],
   category: 'owner',
-  desc: 'Tambah owner (Owner only). Tanpa nomor = pakai JID kamu sendiri.',
-  use: '[nomor]   <- kosongkan untuk pakai JID sendiri',
+  desc: 'Tambah owner pakai nomor (Owner only). Tanpa nomor = nomor kamu sendiri.',
+  use: '[nomor]   contoh: 081234567890 | +62 812-3456-7890 | 6281234567890',
   run: async (m) => {
+    const P = m.config.prefix
     const hasOwner = m.config.envOwners.length > 0 || (m.db.data.owners || []).length > 0
 
     // Sudah ada owner -> hanya owner yang boleh menambah owner.
     if (hasOwner && !m.isOwner) return m.reply('⛔ Command khusus *Owner*.')
 
-    const jid = jidFromInput(m)
-    if (!jid) return m.reply('❌ Gagal ambil JID. Coba: ' + m.config.prefix + 'addowner 082189822272')
+    const typed = (m.args || '').trim()
+    let jid = m.func.target(m) // nomor di argumen -> orang yang di-tag -> pesan yang di-reply
+    if (!jid && typed) {
+      return m.reply(
+        `❌ "${typed}" bukan nomor yang bisa dipakai.\n` +
+          `Contoh: ${P}addowner 081234567890\nAtau: ${P}addowner +62 812-3456-7890`
+      )
+    }
+    // Tanpa argumen & tanpa tag -> pakai nomor pengirim (JID persis yang dilihat bot)
+    const self = !jid
+    if (self) jid = m.sender
+    const nomor = m.func.num(jid)
 
     // Bootstrap: bot belum punya owner sama sekali.
     if (!hasOwner) {
       m.db.addOwner(jid)
       return m.reply(
-        '✅ ' + jid + ' didaftarkan sebagai owner pertama (bootstrap).\n' +
-          '⚠️ Sebaiknya isi OWNER_NUMBER di .env lalu restart bot.\n\nKetik .id untuk cek.'
+        `✅ *${nomor}* didaftarkan sebagai owner pertama (bootstrap).\n` +
+          '⚠️ Sebaiknya isi OWNER_NUMBER di .env lalu restart bot.\n\n' +
+          `Ketik ${P}id untuk cek.`
       )
     }
 
     const added = m.db.addOwner(jid)
-    const note = jid === m.sender ? '\n📌 (Ini JID kamu persis yang dilihat bot, jadi pasti cocok.)' : ''
     if (added) {
-      await m.reply('✅ ' + jid + ' sekarang jadi *OWNER*.' + note + '\n\nKetik .id untuk cek.')
+      const note = self ? '\n📌 (Ini nomor kamu persis yang dilihat bot, jadi pasti cocok.)' : ''
+      await m.reply(`✅ *${nomor}* sekarang jadi *OWNER*.${note}\n\nKetik ${P}id untuk cek.`)
     } else {
-      await m.reply('ℹ️ ' + jid + ' sudah terdaftar owner. Ketik .id untuk cek.')
+      await m.reply(`ℹ️ *${nomor}* sudah terdaftar owner. Ketik ${P}id untuk cek.`)
     }
   },
 }

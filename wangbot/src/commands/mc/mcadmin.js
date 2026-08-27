@@ -34,9 +34,13 @@ module.exports = {
     if (sub === 'add') {
       const [ownerRaw, name, host, port] = rest
       if (!ownerRaw || !name || !host) {
-        return m.reply(`Contoh: \`${P}mcadmin add 6281234567890 Survival play.wangstore.id 25565\``)
+        return m.reply(`Contoh: \`${P}mcadmin add 081234567890 Survival play.wangstore.id 25565\``)
       }
-      const ownerJid = ownerRaw.indexOf('@') > 0 ? ownerRaw : ownerRaw.replace(/\D/g, '') + '@s.whatsapp.net'
+      // Nomor pelanggan dinormalkan (0812.. -> 62812..), JID penuh tetap diterima.
+      const ownerJid = m.func.jidFromInput(ownerRaw)
+      if (!ownerJid) {
+        return m.reply(`❌ "${ownerRaw}" bukan nomor yang bisa dipakai. Contoh: \`${P}mcadmin add 081234567890 Survival play.wangstore.id 25565\``)
+      }
       const id = 'manual-' + Date.now().toString(36)
       Mc.setEntry(m.db, ownerJid, {})
       const reg = Mc.registerServer(

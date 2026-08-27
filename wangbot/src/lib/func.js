@@ -58,6 +58,105 @@ const func = {
     return jid
   },
 
+  /**
+   * Nomor polos dari sebuah JID — untuk DITAMPILKAN ke user.
+   * 6281234@s.whatsapp.net -> 6281234 (user tidak perlu melihat JID).
+   */
+  num(jid) {
+    return String(jid || '').split('@')[0] || '-'
+  },
+
+  /**
+   * Ubah input user menjadi JID pribadi (@s.whatsapp.net) yang ternormalisasi.
+   * Semua format ini diterima:
+   *   0812xxxx | +62 812-xxxx | 62 812 xxxx | 62812xxxx | 62812xxxx@s.whatsapp.net
+   *   wa.me/62812xxxx | @62812xxxx (tag di dalam teks)
+   * Mengembalikan '' bila tidak ada nomor yang masuk akal (minimal 8 angka,
+   * supaya kata biasa / angka pendek di dalam alasan tidak dianggap nomor).
+   */
+  jidFromInput(input) {
+    const { toJid } = require('../config')
+    // '@' di depan = bentuk mention di dalam teks, bukan bagian JID
+    const s = String(input || '').trim().replace(/^@(?=\d)/, '')
+    if (!s) return ''
+    if (s.endsWith('@g.us')) return '' // JID grup, bukan orang
+    if (s.includes('@')) {
+      if (s.endsWith('@s.whatsapp.net')) return s // sudah JID -> tetap didukung
+      if (s.endsWith('@lid')) return s // LID: biarkan, handler yang me-resolve ke nomor
+      const head = s.split('@')[0].replace(/[^0-9]/g, '')
+      return head.length >= 8 ? toJid(head) : ''
+    }
+    const digits = s.replace(/[^0-9]/g, '')
+    if (digits.length < 8) return ''
+    return toJid(digits)
+  },
+
+  /**
+   * Pecah teks argumen jadi calon nomor. Nomor yang ditulis ber-spasi
+   * ("+62 811-9999-8888", "0812 3456 7890") digabung dulu; kalau gabungan-nya
+   * terlalu panjang untuk satu nomor (mis. dua nomor berurutan), dipecah lagi
+   * per bagian supaya ".kick 0812xxx 0813xxx" tetap kena dua orang.
+   */
+  phoneSequences(text) {
+    const NUMTOK = /^[@+()\-.\d]+$/
+    const out = []
+    let buf = []
+    const flush = () => {
+      if (!buf.length) return
+      if (buf.length > 1) {
+        const joined = buf.join('')
+        const digits = joined.replace(/\D/g, '')
+        if (digits.length >= 9 && digits.length <= 15) {
+          out.push(joined)
+          buf = []
+          return
+        }
+      }
+      out.push(...buf)
+      buf = []
+    }
+    for (const tok of String(text || '').split(/[\s,]+/).filter(Boolean)) {
+      if (tok.includes('@')) {
+        // JID apa adanya (@s.whatsapp.net / @lid / @g.us) -> serahkan ke jidFromInput
+        flush()
+        out.push(tok)
+      } else if (NUMTOK.test(tok)) buf.push(tok)
+      else flush()
+    }
+    flush()
+    return out
+  },
+
+  /**
+   * Ambil target ORANG untuk command owner/admin dari: nomor di argumen,
+   * orang yang di-tag, atau pesan yang di-reply. Hasil selalu JID pribadi
+   * ternormalisasi, jadi owner/admin cukup mengetik nomor.
+   *
+   * @param {object} m           pesan (butuh .args, .mentionedJid, .quoted)
+   * @param {string} [argText]   teks argumen (default m.args)
+   * @param {object} [opts]      { firstOnly: true } = berhenti di target pertama
+   * @returns {string[]} daftar JID (bisa kosong)
+   */
+  targets(m, argText, opts = {}) {
+    const out = []
+    const push = (j) => {
+      if (j && !j.endsWith('@g.us') && !out.includes(j)) out.push(j)
+    }
+    const text = argText === undefined ? m.args || '' : String(argText || '')
+    const candidates = [...func.phoneSequences(text).map((t) => t.replace(/^@/, '')), ...(m.mentionedJid || [])]
+    for (const c of candidates) {
+      push(func.jidFromInput(c))
+      if (opts.firstOnly && out.length) break
+    }
+    if (!out.length && m.quoted && m.quoted.sender) push(func.jidFromInput(m.quoted.sender))
+    return out
+  },
+
+  /** Target pertama saja (untuk command yang hanya butuh satu orang). */
+  target(m, argText, opts = {}) {
+    return func.targets(m, argText, opts)[0] || ''
+  },
+
   /** Format runtime */
   runtime(ms) {
     const s = Math.floor(ms / 1000)

@@ -5,15 +5,14 @@ module.exports = {
   isGroup: true,
   isAdmin: true,
   isBotAdmin: true,
-  desc: 'Jadikan member sebagai admin grup.',
+  desc: 'Jadikan member sebagai admin grup (nomor / reply / tag).',
+  use: '[nomor ...]   contoh: 081234567890',
   run: async (m) => {
-    const targets = []
-    if (m.quoted) targets.push(m.quoted.sender)
-    for (const t of m.mentionedJid) if (!targets.includes(t)) targets.push(t)
-    if (!targets.length) return m.reply('Reply / tag member.')
+    const targets = m.func.targets(m)
+    if (!targets.length) return m.reply('Contoh: ' + m.config.prefix + 'promote 081234567890\nAtau reply / tag member.')
     try {
       await m.sock.groupParticipantsUpdate(m.chat, targets, 'promote')
-      await m.reply('✅ Berhasil promote ' + targets.length + ' member.')
+      await m.reply('✅ Berhasil promote ' + targets.map((t) => m.func.num(t)).join(', ') + ' jadi admin.')
     } catch (e) {
       await m.reply('❌ Gagal: ' + e.message)
     }

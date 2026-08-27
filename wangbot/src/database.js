@@ -71,6 +71,25 @@ const DEFAULT_DB = {
     entries: {}, // jid pelanggan -> { email, token (Client API), servers: [id] }
     servers: {}, // identifier -> { name, host, port, rcon, monitor, ownerJid, ... }
   },
+  // Ask AI (lihat src/lib/ai.js). Semua nilai di sini adalah override runtime
+  // yang di-set owner lewat command .aiset; kalau kosong/negatif, nilai dari
+  // .env (AI_API_URL, AI_API_KEY, AI_MODEL, ...) yang dipakai.
+  ai: {
+    enabled: true,
+    allowGroup: true,
+    provider: '', // '' = tebak otomatis, 'openai' | 'gemini'
+    baseUrl: '', // contoh: https://api.openai.com/v1
+    apiKey: '',
+    model: '',
+    system: '', // '' = pakai system prompt bawaan
+    temperature: -1, // -1 = belum diset
+    maxTokens: -1,
+    timeout: -1, // ms
+    history: -1,
+    maxChars: -1,
+    headers: {}, // header tambahan (mis. HTTP-Referer untuk OpenRouter)
+    usage: { calls: 0, failed: 0, lastAt: 0, lastError: '' },
+  },
 }
 
 class Database {
