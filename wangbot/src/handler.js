@@ -164,6 +164,22 @@ function pruneRateBuckets(now = Date.now()) {
 }
 setInterval(pruneRateBuckets, 120000).unref()
 
+// Command yang argumennya mengandung rahasia (API key, password RCON, token
+// panel). Nilai disamarkan sebelum ditulis ke data/logs/*_command.log supaya
+// kredensial tidak menumpuk di file log.
+const SECRET_CMDS = new Set(['aiset', 'aiconfig', 'aikonfig', 'mcrcon', 'setrcon', 'mclink', 'mcreg', 'mcregister', 'mclogin'])
+
+function logSafe(m) {
+  const args = m.args || ''
+  if (!SECRET_CMDS.has(m.command) || !args) return args
+  const sp = args.search(/\s/)
+  if (sp < 0) return args
+  const sub = args.slice(0, sp)
+  const rest = args.slice(sp + 1).trim()
+  if (!rest) return args
+  return `${sub} ${rest.length <= 8 ? '***' : rest.slice(0, 3) + '***' + rest.slice(-2)}`
+}
+
 function checkRateLimit(sender) {
   const now = Date.now()
   let bucket = rateBucket.get(sender)
@@ -278,7 +294,7 @@ async function handle(sock, db, loader, M) {
 
   // log + stats
   const from = m.isGroup ? m.groupName : 'PRIVATE'
-  logger.cmd(`[${from}] ${m.sender.split('@')[0]}: ${config.prefix}${m.command} ${m.args}`)
+  logger.cmd(`[${from}] ${m.sender.split('@')[0]}: ${config.prefix}${m.command} ${logSafe(m)}`)
 
   // jalankan
   try {
@@ -315,3 +331,4 @@ module.exports = { handle, buildM, invalidateMeta }
 // hook kecil untuk test
 module.exports._rateBucket = rateBucket
 module.exports._pruneRateBuckets = pruneRateBuckets
+module.exports._logSafe = logSafe

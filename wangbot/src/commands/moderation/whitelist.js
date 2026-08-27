@@ -5,7 +5,7 @@ module.exports = {
   isGroup: true,
   isAdmin: true,
   desc: 'Kelola whitelist link & member (Anti Link/Promo kebal).',
-  use: 'add link <domain> | add member | del link <idx> | del member | list',
+  use: 'add link <domain> | add member <nomor> | del link <idx> | del member <nomor> | list',
   run: async (m) => {
     const g = m.db.getGroup(m.chat)
     const [action, type, ...rest] = m.args.toLowerCase().split(/\s+/)
@@ -16,7 +16,7 @@ module.exports = {
       t += '*Link:*\n'
       t += g.wlLinks.length ? g.wlLinks.map((l, i) => `${i + 1}. ${l}`).join('\n') : '(kosong)'
       t += '\n\n*Member:*\n'
-      t += g.wlMembers.length ? g.wlMembers.map((l, i) => `${i + 1}. @${l.split('@')[0]}`).join('\n') : '(kosong)'
+      t += g.wlMembers.length ? g.wlMembers.map((l, i) => `${i + 1}. @${m.func.num(l)}`).join('\n') : '(kosong)'
       return m.reply(t, { mentions: g.wlMembers })
     }
 
@@ -30,12 +30,14 @@ module.exports = {
         return m.reply('✅ Link *' + link + '* di-whitelist.')
       }
       if (type === 'member') {
-        const target = m.quoted ? m.quoted.sender : m.mentionedJid[0]
-        if (!target) return m.reply('Reply / tag member untuk di-whitelist.')
-        if (g.wlMembers.includes(target)) return m.reply('ℹ️ Sudah ada.')
+        const target = m.func.target(m, data)
+        if (!target) {
+          return m.reply('Contoh: ' + m.config.prefix + 'whitelist add member 081234567890\nAtau reply / tag member untuk di-whitelist.')
+        }
+        if (g.wlMembers.includes(target)) return m.reply('ℹ️ @' + m.func.num(target) + ' sudah ada.', { mentions: [target] })
         g.wlMembers.push(target)
         m.db.save()
-        return m.reply('✅ @' + target.split('@')[0] + ' di-whitelist.', { mentions: [target] })
+        return m.reply('✅ @' + m.func.num(target) + ' di-whitelist.', { mentions: [target] })
       }
     }
 
@@ -48,13 +50,13 @@ module.exports = {
         return m.reply('✅ Link *' + removed + '* dihapus.')
       }
       if (type === 'member') {
-        const target = m.quoted ? m.quoted.sender : m.mentionedJid[0]
-        if (!target) return m.reply('Reply / tag member.')
+        const target = m.func.target(m, data)
+        if (!target) return m.reply('Contoh: ' + m.config.prefix + 'whitelist del member 081234567890')
         const i = g.wlMembers.indexOf(target)
-        if (i < 0) return m.reply('ℹ️ Tidak ada di whitelist.')
+        if (i < 0) return m.reply('ℹ️ @' + m.func.num(target) + ' tidak ada di whitelist.', { mentions: [target] })
         g.wlMembers.splice(i, 1)
         m.db.save()
-        return m.reply('✅ Dihapus dari whitelist.')
+        return m.reply('✅ @' + m.func.num(target) + ' dihapus dari whitelist.', { mentions: [target] })
       }
     }
 

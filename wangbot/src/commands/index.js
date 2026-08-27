@@ -19,6 +19,7 @@ const CATEGORY_META = {
   cs: { title: 'Customer Service', emoji: '🎫' },
   stats: { title: 'Statistik', emoji: '📈' },
   games: { title: 'Games', emoji: '🎮' },
+  ai: { title: 'AI Assistant', emoji: '🧠' },
 }
 
 function loadCommands() {

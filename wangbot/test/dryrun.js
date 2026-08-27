@@ -22,6 +22,10 @@ process.env.WHATSAPP_ADMIN = '6281234567890'
 process.env.PANEL_API_URL = process.env.FAKE_PANEL || ''
 process.env.PANEL_API_TOKEN = process.env.FAKE_PANEL ? 'tok' : ''
 process.env.MONITOR_INTERVAL = '60'
+// Dry-run tidak boleh menembak penyedia AI sungguhan.
+process.env.AI_API_URL = ''
+process.env.AI_API_KEY = ''
+process.env.AI_MODEL = ''
 
 // bersih db
 try { require('fs').unlinkSync(process.env.DB_PATH) } catch (_) {}
@@ -177,7 +181,7 @@ async function main() {
 
 function sampleArg(c) {
   const n = c.name.toLowerCase()
-  if (/^(eval|exec|bc|broadcast|addowner|delowner|setprefix|join|leave|addfaq|delfaq|setrules|setwelcome|setgoodbye|promoset|promogroup|promotemplate|setinfo|tagall|hidetag|kick|add|warn|delwarn|blacklist|whitelist|backup|restore|feedback|laporan|suit|tebakangka|wm|smeme|tsticker|sticker|afk|cs|maintenance|gitpull|restart|paneltest)$/.test(n)) return sampleFor(n)
+  if (/^(eval|exec|bc|broadcast|addowner|delowner|setprefix|join|leave|addfaq|delfaq|setrules|setwelcome|setgoodbye|promoset|promogroup|promotemplate|setinfo|tagall|hidetag|kick|add|warn|delwarn|blacklist|whitelist|backup|restore|feedback|laporan|suit|tebakangka|wm|smeme|tsticker|sticker|afk|cs|maintenance|gitpull|restart|paneltest|ai|aiset|aiconfig)$/.test(n)) return sampleFor(n)
   return ''
 }
 
@@ -187,8 +191,8 @@ function sampleFor(n) {
     exec: 'echo hi',
     bc: 'halo semua',
     broadcast: 'halo semua',
-    addowner: '628111222333',
-    delowner: '628111222333',
+    addowner: '08111222333',
+    delowner: '08111222333',
     setprefix: '!',
     join: 'https://chat.whatsapp.com/XYZ',
     leave: '',
@@ -218,6 +222,9 @@ function sampleFor(n) {
     wm: 'Pack|Author',
     smeme: 'atas|bawah',
     tsticker: 'halo dunia',
+    ai: 'apa bedanya vps dan dedicated server?',
+    aiset: 'status',
+    aiconfig: 'status',
     sticker: '',
     afk: 'makan',
     cs: '',
