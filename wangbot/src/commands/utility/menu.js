@@ -29,7 +29,7 @@ module.exports = {
 
     const order = [
       'utility', 'info', 'community', 'moderation', 'admin', 'media',
-      'viewonce', 'monitoring', 'mc', 'marketing', 'broadcast', 'cs', 'ai', 'stats',
+      'viewonce', 'monitoring', 'mc', 'marketing', 'broadcast', 'cs', 'assistant', 'ai', 'stats',
       'games', 'owner',
     ]
 

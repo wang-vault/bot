@@ -1,4 +1,5 @@
 const { exec } = require('child_process')
+const logger = require('../../lib/logger')
 
 module.exports = {
   name: 'gitpull',

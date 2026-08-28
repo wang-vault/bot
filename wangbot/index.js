@@ -8,6 +8,7 @@ const { startWhatsApp } = require('./src/connection')
 const { handleParticipantsUpdate } = require('./src/events/groups')
 const Monitor = require('./src/lib/monitor')
 const Marketing = require('./src/lib/marketing')
+const Guardian = require('./src/lib/guardian')
 const logger = require('./src/lib/logger')
 
 // ---------- Database ----------
@@ -45,6 +46,11 @@ function onReady(sock) {
   } catch (e) {
     logger.error('Marketing.start', e)
   }
+  try {
+    Guardian.start(sock, db, loader)
+  } catch (e) {
+    logger.error('Guardian.start', e)
+  }
 }
 
 async function main() {
@@ -63,6 +69,9 @@ main()
 // Graceful shutdown
 const shutdown = (sig) => {
   logger.warn(`Menerima ${sig}, menyimpan database & keluar...`)
+  try {
+    Guardian.stop()
+  } catch (_) {}
   try {
     db.save(true)
   } catch (_) {}

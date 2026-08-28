@@ -420,10 +420,13 @@ function clearHistory(chatJid) {
 /**
  * Susun pesan (system + riwayat + pertanyaan baru) sesuai batas riwayat.
  */
-function buildMessages(db, chatJid, question) {
+function buildMessages(db, chatJid, question, options = {}) {
   const cfg = resolve(db)
   const msgs = []
-  if (cfg.system) msgs.push({ role: 'system', content: cfg.system })
+  // Personal Agent dapat menyuntikkan identitas dinamis tanpa menimpa setting
+  // provider AI. Pemanggil lama tetap memakai cfg.system seperti sebelumnya.
+  const system = options.system === undefined ? cfg.system : String(options.system || '')
+  if (system) msgs.push({ role: 'system', content: system })
   if (cfg.history > 0) msgs.push(...historyOf(chatJid).slice(-cfg.history))
   msgs.push({ role: 'user', content: String(question) })
   return msgs
@@ -432,8 +435,8 @@ function buildMessages(db, chatJid, question) {
 /**
  * Pintu masuk untuk command: tanya + simpan riwayat.
  */
-async function askChat(db, chatJid, question) {
-  const messages = buildMessages(db, chatJid, question)
+async function askChat(db, chatJid, question, options = {}) {
+  const messages = buildMessages(db, chatJid, question, options)
   const res = await ask(db, messages)
   if (res.ok) {
     pushHistory(chatJid, 'user', question)

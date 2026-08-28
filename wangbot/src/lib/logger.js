@@ -1,6 +1,11 @@
 const fs = require('fs')
 const path = require('path')
 
+// Guardian dapat berlangganan error runtime tanpa mengubah setiap call-site.
+// Set sederhana dipakai (bukan EventEmitter event "error") agar listener yang
+// bermasalah tidak pernah membuat proses ikut crash.
+const errorListeners = new Set()
+
 const LOG_DIR = path.resolve('./data/logs')
 try {
   fs.mkdirSync(LOG_DIR, { recursive: true })
@@ -27,6 +32,17 @@ const logger = {
     const m = err ? `${msg} -> ${err && err.stack ? err.stack : err}` : msg
     console.error(`[ERROR] ${m}`)
     write('error', m)
+    const event = { at: Date.now(), source: String(msg || 'unknown'), message: m }
+    for (const listener of errorListeners) {
+      try {
+        listener(event)
+      } catch (_) {}
+    }
+  },
+  onError: (listener) => {
+    if (typeof listener !== 'function') return () => {}
+    errorListeners.add(listener)
+    return () => errorListeners.delete(listener)
   },
   cmd: (msg) => write('command', msg),
   join: (msg) => write('joinleave', msg),
