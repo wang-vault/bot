@@ -71,6 +71,37 @@ const DEFAULT_DB = {
     entries: {}, // jid pelanggan -> { email, token (Client API), servers: [id] }
     servers: {}, // identifier -> { name, host, port, rcon, monitor, ownerJid, ... }
   },
+  // Personal Agent: identitas, memori jangka panjang, persetujuan tindakan,
+  // serta status pemeriksaan kode otomatis. Nilai null/kosong berarti ambil
+  // default atau .env; tindakan pending otomatis kedaluwarsa.
+  assistant: {
+    enabled: null,
+    mode: '', // chat | supervised | safe | autonomous
+    autoChat: null,
+    persona: {
+      name: '',
+      ownerName: '',
+      role: '',
+      traits: '',
+      style: '',
+    },
+    memory: {}, // key -> { value, updatedAt }; rahasia ditolak
+    pending: {}, // id -> tindakan agent yang menunggu .approve
+    stats: { chats: 0, actions: 0, approvals: 0, rejected: 0, failed: 0, lastAt: 0 },
+    guardian: {
+      enabled: null,
+      intervalMinutes: -1,
+      runtimeErrors: null,
+      reportHealthy: null,
+      lastRun: 0,
+      lastReportAt: 0,
+      lastFingerprint: '',
+      lastErrors: 0,
+      lastWarnings: 0,
+      lastDurationMs: 0,
+      runtimeSeen: {},
+    },
+  },
   // Ask AI (lihat src/lib/ai.js). Semua nilai di sini adalah override runtime
   // yang di-set owner lewat command .aiset; kalau kosong/negatif, nilai dari
   // .env (AI_API_URL, AI_API_KEY, AI_MODEL, ...) yang dipakai.

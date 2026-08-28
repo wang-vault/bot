@@ -1,4 +1,5 @@
 const Ai = require('../../lib/ai')
+const Persona = require('../../lib/persona')
 
 // Tanya AI. Penyedia & API key-nya diatur owner lewat .env / .aiset, jadi
 // command ini tidak peduli vendor apa yang dipakai di belakangnya.
@@ -32,7 +33,12 @@ module.exports = {
     await m.react('🧠').catch(() => {})
     await setTyping(m, true)
 
-    const res = await Ai.askChat(m.db, m.chat, question)
+    const system = Persona.systemPrompt(m.db, cfg.system, {
+      isOwner: m.isOwner,
+      isGroup: m.isGroup,
+      groupName: m.groupName,
+    })
+    const res = await Ai.askChat(m.db, m.chat, question, { system })
     await setTyping(m, false)
 
     if (!res.ok) return m.reply(`❌ ${res.error}`)

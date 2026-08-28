@@ -2,7 +2,7 @@
 
 Bot WhatsApp multi-fitur berbasis **Node.js** + **Baileys**, dirancang untuk komunitas **WangStore** (hosting, VPS, dedicated server). File utama: **`index.js`**. Nomor owner diatur lewat **`.env`** dan bisa diubah kapan saja.
 
-> ✅ **95 command** terbagi dalam 16 kategori — teruji load & dry-run tanpa error.
+> ✅ **101 command** terbagi dalam 17 kategori, termasuk Personal Agent dengan self-check proaktif.
 
 ---
 
@@ -26,6 +26,7 @@ Bot WhatsApp multi-fitur berbasis **Node.js** + **Baileys**, dirancang untuk kom
 | 🔐 **Keamanan** | Owner/Admin Only, Rate Limit, Blacklist User & Grup |
 | 🎫 **Customer Service** | FAQ, Kontak, Jam Operasional, Feedback, Laporan |
 | 🧠 **Ask AI** | Tanya AI apa saja (`.ai`), provider bebas (OpenAI/Groq/OpenRouter/Gemini/DeepSeek/Ollama), API key & model diatur owner lewat `.env` **atau** WhatsApp tanpa restart, memori percakapan, mode grup/pribadi, uji koneksi |
+| 🧭 **Personal Agent** | Kepribadian & peran tetap, memori jangka panjang, instruksi natural → command, 4 mode otonomi, approval tindakan sensitif, auto-chat khusus owner, self-check kode + laporan proaktif |
 | 🚨 **Monitoring Otomatis** | Notif Node Offline, Website/Panel Down, Alert RAM/CPU/Disk tinggi, Maintenance Mode, Server Minecraft Down/Pulih ke pelanggan |
 | 👑 **Owner** | Eval JS, Exec Terminal, Restart, Git Pull, Backup/Restore DB, Broadcast, Join/Leave Grup, Add/Del Owner |
 | 🎮 **Games** | Tebak Angka, Suit, Dadu, Coin Flip, Slot |
@@ -85,10 +86,14 @@ Setelah login, ketik `.menu` di chat WhatsApp untuk melihat semua command.
 | `AI_API_KEY` | API key penyedia AI |
 | `AI_MODEL` | Nama model, mis. `gpt-4o-mini` |
 | `AI_PROVIDER` | `openai` \| `gemini` \| `auto` (default `auto`) |
+| `ASSISTANT_MODE` | `chat` \| `supervised` \| `safe` \| `autonomous` |
+| `ASSISTANT_AUTO_CHAT` | Pesan private owner tanpa prefix (`0`/`1`) |
+| `ASSISTANT_GUARDIAN` | Self-check kode otomatis (`0`/`1`) |
+| `ASSISTANT_CHECK_INTERVAL` | Interval self-check dalam menit (default `360`) |
 
 > **Monitoring hosting** butuh **Application API Key** Pterodactyl. Jika tidak diisi, fitur monitoring node nonaktif tetapi cek status website tetap jalan.
 
-> 🧠 **Ask AI** butuh 3 nilai: `AI_API_URL`, `AI_API_KEY`, `AI_MODEL`. Kalau tidak diisi, fitur `.ai` nonaktif sendiri (bot tetap jalan normal). Semuanya juga bisa di-set dari WhatsApp tanpa restart: `.aiset api ...`, `.aiset key ...`, `.aiset model ...` — resep tiap penyedia ada di **[`docs/AI.md`](docs/AI.md)**.
+> 🧠 **Ask AI dan Personal Agent** memakai 3 nilai yang sama: `AI_API_URL`, `AI_API_KEY`, `AI_MODEL`. Kalau tidak diisi, self-check Guardian tetap bekerja tanpa AI, tetapi percakapan `.ai`/`.asisten` nonaktif. Konfigurasi provider: **[`docs/AI.md`](docs/AI.md)**. Panduan agent: **[`docs/ASSISTANT.md`](docs/ASSISTANT.md)**.
 
 ### 👑 Mengubah Owner
 Owner bisa diubah kapan saja **tanpa edit kode**:
@@ -138,9 +143,9 @@ wangbot/
     ├── connection.js     # Koneksi WhatsApp (Baileys) + reconnect
     ├── handler.js        # Router pesan, permission, rate-limit, AFK, FAQ
     ├── events/groups.js  # Welcome/Goodbye/Rules otomatis
-    ├── lib/              # func, message, panel, monitor, mc, minecraft, ai,
-    │                     #   marketing, moderation, sticker, layanan, logger
-    └── commands/         # 95 command dalam 16 folder kategori
+    ├── lib/              # ai, assistant, persona, guardian, code-health,
+    │                     # monitor, mc, marketing, moderation, logger, dll.
+    └── commands/         # 101 command dalam 17 folder kategori
 ```
 
 ---
@@ -158,7 +163,11 @@ wangbot/
 .smeme atas|bawah (reply)      # sticker meme
 .status                        # monitoring hosting
 .paket                         # info layanan
-.ai kenapa server mc lag?      # tanya AI (butuh API key diisi owner)
+.ai kenapa server mc lag?      # tanya AI dengan kepribadian bot
+.asisten cek kesehatan bot     # agent memilih & menjalankan alat yang aman
+.persona name Aruna            # bentuk identitas agent tanpa restart
+.agentset mode safe            # baca otomatis, perubahan butuh approval
+.selfcheck deep                # audit source + jalankan seluruh test
 .aiset api https://api.groq.com/openai/v1   # owner: set endpoint AI
 .aiset key gsk_xxxx            # owner: set API key (disamarkan di chat & log)
 .aiset test                    # owner: uji koneksi AI
@@ -175,6 +184,7 @@ wangbot/
 - **Restart** butuh process manager (PM2/systemd). Command `.restart` memicu `process.exit(1)` agar di-restart otomatis.
 - **Sticker** hanya untuk gambar (sticker video sengaja dinonaktifkan). Render teks memakai `sharp` (sudah include).
 - Semua error tertangkap (`uncaughtException`/`unhandledRejection`) agar bot tidak crash.
+- **Guardian** memeriksa syntax/require/command/database/runtime dan melaporkan perubahan masalah ke seluruh owner; tindakan sensitif hasil rencana AI selalu membutuhkan `.approve`.
 
 ---
 
@@ -220,9 +230,10 @@ Jika tetap `@lid` di `.id`, berarti nomor asli tidak tersedia di metadata grup (
 WangBot punya test yang benar-benar menjalankan kode (bukan sekadar cek sintaks):
 
 ```bash
-npm test                 # core + plumbing + Minecraft + AI + nomor — total 248 assertion
+npm test                 # core + plumbing + Minecraft + AI + nomor + Personal Agent
 npm run test:mc          # khusus Minecraft: 70 assertion (SLP, RCON, Client API, alert, command)
-npm run test:ai          # khusus Ask AI: 79 assertion (openai-compatible, Gemini, error, command, keamanan log)
+npm run test:ai          # khusus Ask AI (provider, error, command, keamanan log)
+npm run test:assistant   # persona, planner JSON, policy/approval, memori, dan scanner kode
 npm run test:target      # khusus input NOMOR: 57 assertion (addowner/delowner, warn, kick, blacklist, mcadmin, .id)
 npm run fake:panel       # API Pterodactyl Application tiruan di :8791 (2 node)
 npm run fake:mc          # server Minecraft tiruan (SLP + RCON)
@@ -239,10 +250,11 @@ npm run fake:ai &
 FAKE_AI=http://127.0.0.1:8793 npm run test:ai   # -> 79 assertion
 ```
 
-Hasil terakhir: `21/21` (core) + `21/21` (plumbing) + `70/70` (Minecraft) + `79/79` (Ask AI) + `57/57` (input nomor) lulus.
+Hasil terakhir: seluruh suite lulus, termasuk **50/50** pemeriksaan Personal Agent.
 Rincian temuan & perbaikan: **[`AUDIT.md`](AUDIT.md)**.
 Panduan fitur server Minecraft: **[`docs/MINECRAFT.md`](docs/MINECRAFT.md)**.
 Panduan Ask AI (resep OpenAI/Groq/OpenRouter/Gemini/Ollama): **[`docs/AI.md`](docs/AI.md)**.
+Panduan Personal Agent (persona, otonomi, approval, Guardian): **[`docs/ASSISTANT.md`](docs/ASSISTANT.md)**.
 
 ---
 © WangStore — MIT License

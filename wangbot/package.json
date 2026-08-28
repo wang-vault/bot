@@ -10,7 +10,8 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "test": "node test/core.test.js && node test/plumbing.test.js && node test/mc.test.js && node test/ai.test.js && node test/target.test.js",
+    "test": "node test/core.test.js && node test/plumbing.test.js && node test/mc.test.js && node test/ai.test.js && node test/target.test.js && node test/assistant.test.js",
+    "test:assistant": "node test/assistant.test.js",
     "test:dryrun": "node test/dryrun.js",
     "fake:panel": "node test/fake-panel.js",
     "test:plumbing": "node test/plumbing.test.js",

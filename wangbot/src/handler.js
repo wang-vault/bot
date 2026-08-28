@@ -3,6 +3,7 @@ const func = require('./lib/func')
 const config = require('./config')
 const logger = require('./lib/logger')
 const moderation = require('./lib/moderation')
+const Assistant = require('./lib/assistant')
 const NodeCache = require('node-cache')
 
 // Cache metadata grup (TTL 60 detik)
@@ -167,11 +168,26 @@ setInterval(pruneRateBuckets, 120000).unref()
 // Command yang argumennya mengandung rahasia (API key, password RCON, token
 // panel). Nilai disamarkan sebelum ditulis ke data/logs/*_command.log supaya
 // kredensial tidak menumpuk di file log.
-const SECRET_CMDS = new Set(['aiset', 'aiconfig', 'aikonfig', 'mcrcon', 'setrcon', 'mclink', 'mcreg', 'mcregister', 'mclogin'])
+const SECRET_CMDS = new Set([
+  'aiset', 'aiconfig', 'aikonfig',
+  'mcrcon', 'setrcon', 'mclink', 'mcreg', 'mcregister', 'mclogin',
+  // Instruksi/memori/persona agent dapat berisi konteks pribadi owner. Masker
+  // juga melindungi percobaan menyimpan token yang nantinya ditolak oleh kode.
+  'asisten', 'assistant', 'agent', 'bantuaku',
+  'agentset', 'asistenset', 'agentconfig',
+  'persona', 'kepribadian', 'identity', 'identitas',
+])
+
+const PRIVATE_TEXT_CMDS = new Set([
+  'asisten', 'assistant', 'agent', 'bantuaku',
+  'agentset', 'asistenset', 'agentconfig',
+  'persona', 'kepribadian', 'identity', 'identitas',
+])
 
 function logSafe(m) {
   const args = m.args || ''
   if (!SECRET_CMDS.has(m.command) || !args) return args
+  if (PRIVATE_TEXT_CMDS.has(m.command)) return `[private:${args.length} chars]`
   const sp = args.search(/\s/)
   if (sp < 0) return args
   const sub = args.slice(0, sp)
@@ -250,6 +266,18 @@ async function handle(sock, db, loader, M) {
     await moderation.run(sock, db, m)
   } catch (e) {
     logger.error('moderation', e)
+  }
+
+  // ====== PERSONAL AGENT AUTO-CHAT ======
+  // Hanya owner di private chat dan hanya jika owner menyalakannya. Pesan grup
+  // maupun user biasa tidak pernah diam-diam memakai kuota AI / menjalankan alat.
+  if (!m.isCmd && Assistant.shouldAutoChat(m)) {
+    try {
+      await Assistant.respond(m, m.body)
+    } catch (e) {
+      logger.error('assistant auto-chat', e)
+    }
+    return
   }
 
   if (!m.isCmd) return
