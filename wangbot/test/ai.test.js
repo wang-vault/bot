@@ -19,6 +19,9 @@ try {
   fs.unlinkSync(process.env.DB_PATH)
 } catch (_) {}
 
+const GroupAccess = require(path.join(BOT, 'src/lib/group-access'))
+const Routing = require(path.join(BOT, 'src/lib/routing'))
+
 const OWNER = '6281234567890@s.whatsapp.net'
 const USER = '628999000111@s.whatsapp.net'
 const GROUP = '120363000000000000@g.us'
@@ -310,6 +313,16 @@ async function main() {
   envOnly()
   Ai.reset(db)
   Ai.clearHistory(GROUP)
+  // Ask AI di grup sekarang lewat gerbang allowlist (.groupaccess). Grup uji
+  // didaftarkan dengan role paling longgar + rute 'group' supaya perilaku lama
+  // tetap teruji; gerbang & rute diuji terpisah di blok [K].
+  GroupAccess.addGroup(db, GROUP, { name: 'Grup Uji AI' })
+  GroupAccess.setOption(db, GROUP, 'role', 'member')
+  GroupAccess.setOption(db, GROUP, 'route', 'group')
+  // metadata grup di-cache 60 detik di handler; tiap sub-test memakai pengirim
+  // baru jadi cache dibatalkan supaya daftar peserta grup uji akurat.
+  const clearMeta = () => require(path.join(BOT, 'src/handler')).invalidateMeta(GROUP)
+  clearMeta()
   const sock = makeSock()
   const senderA = other()
   sock.__sender = senderA
@@ -323,6 +336,7 @@ async function main() {
   const sockQ = makeSock()
   const senderQ = other()
   sockQ.__sender = senderQ
+  clearMeta()
   await handle(sockQ, db, loader, {
     key: { remoteJid: GROUP, fromMe: false, participant: senderQ, id: 'Q1' },
     message: {
@@ -342,12 +356,14 @@ async function main() {
   const sockH = makeSock()
   const senderH = other()
   sockH.__sender = senderH
+  clearMeta()
   await handle(sockH, db, loader, rawMsg('.ai', { sender: senderH }))
   ok('.ai tanpa pertanyaan -> bantuan, bukan error', /ASK AI/.test(replies(sockH, 0).join(' ')), `-> ${replies(sockH, 0).join(' ').slice(0, 120)}`)
 
   const sockLong = makeSock()
   const senderL = other()
   sockLong.__sender = senderL
+  clearMeta()
   await handle(sockLong, db, loader, rawMsg('.ai ' + 'a'.repeat(3000), { sender: senderL }))
   ok('pertanyaan terlalu panjang ditolak', /terlalu panjang/.test(replies(sockLong, 0).join(' ')), `-> ${replies(sockLong, 0).join(' ').slice(0, 120)}`)
 
@@ -418,6 +434,101 @@ async function main() {
   const menuText = replies(sockMenu, 0).join('\n')
   ok('menu menampilkan kategori AI ASSISTANT', /AI ASSISTANT/.test(menuText), `-> ${menuText.slice(0, 80)}`)
   ok('menu menampilkan .ai', /\.ai .*—/.test(menuText) && /\.aiset/.test(menuText), `-> ${(menuText.match(/\.ai.*/) || [])[0]}`)
+
+  console.log('\n[K] GERBANG GRUP: ALLOWLIST + BATAS ROLE + RUTE JAWABAN')
+  // (a) grup yang tidak didaftarkan owner tidak pernah dapat jawaban
+  const sockNo = makeSock()
+  const senderNo = other()
+  sockNo.__sender = senderNo
+  const OTHER_GROUP = '120363000000000999@g.us'
+  const reqsBefore = (await reqs()).length
+  clearMeta()
+  await handle(sockNo, db, loader, {
+    key: { remoteJid: OTHER_GROUP, fromMe: false, participant: senderNo, id: 'G1' },
+    message: { conversation: '.ai halo' },
+    pushName: 'Tester',
+    messageTimestamp: Math.floor(Date.now() / 1000),
+  })
+  const denied = replies(sockNo, 0).join(' ')
+  ok('grup di luar allowlist ditolak', /belum diizinkan/i.test(denied), `-> ${denied.slice(0, 140)}`)
+  ok('penolakan menyebut jid grup + perintah owner', denied.includes(OTHER_GROUP) && /groupaccess add/.test(denied))
+  ok('percobaan tercatat untuk owner', GroupAccess.listRequests(db).some((r) => r.jid === OTHER_GROUP))
+  ok('penolakan tidak menembak provider AI (kuota aman)', (await reqs()).length === reqsBefore, `-> +${(await reqs()).length - reqsBefore} panggilan`)
+
+  // (b) batas role
+  GroupAccess.setOption(db, GROUP, 'role', 'admin')
+  const sockRole = makeSock()
+  const senderRole = other()
+  sockRole.__sender = senderRole
+  clearMeta()
+  await handle(sockRole, db, loader, rawMsg('.ai halo', { sender: senderRole }))
+  ok('member biasa ditolak saat batas role = admin', /khusus \*Owner \+ Admin grup\*/.test(replies(sockRole, 0).join(' ')), `-> ${replies(sockRole, 0).join(' ').slice(0, 140)}`)
+  GroupAccess.setOption(db, GROUP, 'role', 'owner')
+  const sockOwner = makeSock()
+  sockOwner.__sender = OWNER
+  clearMeta()
+  await handle(sockOwner, db, loader, rawMsg('.ai halo', { sender: OWNER }))
+  ok('owner selalu lolos walau batas role owner', /echo:echo:halo/.test(replies(sockOwner, 0).join(' ')), `-> ${replies(sockOwner, 0).join(' ').slice(0, 140)}`)
+  GroupAccess.setOption(db, GROUP, 'role', 'member')
+
+  // (c) fitur ai dimatikan untuk grup ini
+  GroupAccess.setOption(db, GROUP, 'ai', 'off')
+  const sockOff2 = makeSock()
+  const senderOff = other()
+  sockOff2.__sender = senderOff
+  clearMeta()
+  await handle(sockOff2, db, loader, rawMsg('.ai halo', { sender: senderOff }))
+  ok('grup boleh tapi fitur ai off -> ditolak', /dimatikan untuk grup ini/i.test(replies(sockOff2, 0).join(' ')), `-> ${replies(sockOff2, 0).join(' ').slice(0, 140)}`)
+  GroupAccess.setOption(db, GROUP, 'ai', 'on')
+
+  // (d) saklar total akses grup
+  GroupAccess.setGlobal(db, 'enabled', false)
+  const sockMuted = makeSock()
+  const senderMuted = other()
+  sockMuted.__sender = senderMuted
+  clearMeta()
+  await handle(sockMuted, db, loader, rawMsg('.ai halo', { sender: senderMuted }))
+  ok('.groupaccess off membungkam agent/AI di semua grup', /ditutup owner untuk semua grup/i.test(replies(sockMuted, 0).join(' ')), `-> ${replies(sockMuted, 0).join(' ').slice(0, 140)}`)
+  clearMeta()
+  await handle(sockMuted, db, loader, rawMsg('.ai halo', { group: false, sender: OWNER, chat: OWNER }))
+  ok('chat pribadi tetap jalan saat akses grup mati', /echo:echo:halo/.test(replies(sockMuted, 2).join(' ')), `-> ${replies(sockMuted, 2).join(' ').slice(0, 140)}`)
+  GroupAccess.setGlobal(db, 'enabled', true)
+
+  // (e) rute pintar: obrolan -> grup, server/hosting -> DM owner
+  GroupAccess.setOption(db, GROUP, 'route', 'smart')
+  const sockRoute = makeSock()
+  const senderR = other()
+  sockRoute.__sender = senderR
+  clearMeta()
+  await handle(sockRoute, db, loader, rawMsg('.ai apa itu shared hosting', { sender: senderR }))
+  const toGroup = sockRoute.sent.filter((x) => x.jid === GROUP).map((x) => textOf(x.content)).join(' ')
+  const dms = sockRoute.sent.filter((x) => x.jid === OWNER).map((x) => (x.content && x.content.text) || '')
+  ok('jawaban soal hosting TIDAK ditampilkan penuh di grup', /chat privat/i.test(toGroup) && !/echo:echo:apa itu shared hosting/.test(toGroup), `-> ${toGroup.slice(0, 200)}`)
+  ok('grup tetap dapat penanda bahwa jawaban dikirim privat', /🔒/.test(toGroup), `-> ${toGroup.slice(0, 120)}`)
+  ok('penanya non-owner ikut menerima DM', sockRoute.sent.some((x) => x.jid === senderR), `-> ${JSON.stringify(sockRoute.sent.map((x) => x.jid))}`)
+  ok('jawabannya sampai ke DM owner', dms.some((t) => /echo:echo:apa itu shared hosting/.test(t)), `-> ${JSON.stringify(dms).slice(0, 200)}`)
+  const sockChat = makeSock()
+  const senderR2 = other()
+  sockChat.__sender = senderR2
+  clearMeta()
+  await handle(sockChat, db, loader, rawMsg('.ai ucapkan hai singkat', { sender: senderR2 }))
+  const chatGroup = sockChat.sent.filter((x) => x.jid === GROUP).map((x) => textOf(x.content)).join(' ')
+  ok('obrolan biasa tetap dijawab di grup', /echo:echo:ucapkan hai singkat/.test(chatGroup), `-> ${chatGroup.slice(0, 140)}`)
+  ok('obrolan biasa tidak mengirim DM', !sockChat.sent.some((x) => x.jid === OWNER), `-> ${JSON.stringify(sockChat.sent.map((x) => x.jid))}`)
+  ok('topik diklasifikasi dari teks', Routing.classify('apa itu shared hosting?') === 'ops' && Routing.classify('halo, apa kabar?') === 'public')
+  ok('topik kredensial dianggap paling privat', Routing.classify('ini api key kamu') === 'owner')
+
+  // (f) hapus dari allowlist = akses berhenti
+  GroupAccess.removeGroup(db, GROUP)
+  const sockGone = makeSock()
+  const senderGone = other()
+  sockGone.__sender = senderGone
+  clearMeta()
+  await handle(sockGone, db, loader, rawMsg('.ai halo', { sender: senderGone }))
+  ok('del = grup kehilangan akses seketika', /belum diizinkan/i.test(replies(sockGone, 0).join(' ')), `-> ${replies(sockGone, 0).join(' ').slice(0, 120)}`)
+  GroupAccess.addGroup(db, GROUP, { name: 'Grup Uji AI' })
+  GroupAccess.setOption(db, GROUP, 'route', 'group')
+  ok('add lagi mengembalikan akses', GroupAccess.resolve(db).groups[GROUP] && GroupAccess.resolve(db).groups[GROUP].enabled === true)
 
   console.log('\n[I] KEAMANAN LOG')
   const captured = []

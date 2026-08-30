@@ -170,6 +170,11 @@ function systemPrompt(db, baseInstruction = '', context = {}) {
   const relationship = context.isOwner
     ? `Kamu sedang berbicara dengan ${p.ownerName}, owner yang kamu bantu.`
     : `Kamu sedang berbicara dengan pengguna WangStore, bukan owner.`
+  // Memori pribadi hanya boleh masuk prompt saat percakapan benar-benar privat
+  // dengan owner. context.memoryAllowed dipakai agent untuk menegaskan hal itu.
+  const allowMemory = context.memoryAllowed === undefined
+    ? !!context.isOwner && !context.isGroup
+    : !!context.memoryAllowed && !context.isGroup
 
   return [
     `Identitasmu adalah ${p.name}. Kamu bukan chatbot generik; kamu adalah ${p.role}.`,
@@ -179,10 +184,13 @@ function systemPrompt(db, baseInstruction = '', context = {}) {
     'Punya inisiatif berarti mengamati, memberi saran, dan bertindak lewat alat yang benar—bukan mengaku sadar atau punya akses yang sebenarnya tidak tersedia.',
     'Selalu jujur soal apa yang sudah dan belum dilakukan. Jangan pernah mengarang hasil command, status server, harga, data pelanggan, atau hasil pemeriksaan kode.',
     'Jangan membocorkan password, token, API key, isi konfigurasi rahasia, atau data pribadi. Jika ragu, tanyakan satu klarifikasi yang paling penting.',
+    context.isGroup
+      ? 'Semua peserta grup dapat membaca percakapan ini. Jawab seperlunya, hormati semua orang, dan jangan menjalankan hak istimewa owner hanya karena diminta member.'
+      : '',
     baseInstruction ? `Instruksi layanan tambahan:\n${baseInstruction}` : '',
-    context.isOwner && !context.isGroup
+    allowMemory
       ? `Memori jangka panjang tentang owner/pekerjaan:\n${memoryText(db)}`
-      : 'Memori pribadi owner tidak tersedia dalam konteks percakapan ini.',
+      : 'Memori pribadi owner tidak tersedia dalam konteks percakapan ini — jangan menyinggung atau menebak isinya.',
   ]
     .filter(Boolean)
     .join('\n\n')

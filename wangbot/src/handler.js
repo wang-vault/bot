@@ -68,6 +68,10 @@ async function buildM(sock, M, db, loader) {
       key: qKey,
       message: qctx.quotedMessage,
       sender: qctx.participant || '',
+      // Pesan yang DITERUSKAN dari grup lain ke bot: WhatsApp menaruh JID asal
+      // di contextInfo.remoteJid. Dipakai `.groupaccess add` (owner forwarded
+      // pesan grup -> bot tahu grup mana yang dimaksud) tanpa perlu tahu JID.
+      originJid: qctx.remoteJid || M.key.remoteJid,
       body: getBody(qctx.quotedMessage),
       media: getMediaType(qctx.quotedMessage),
       download: async () => downloadMedia(m.quoted.media, logger),
@@ -128,10 +132,19 @@ async function buildM(sock, M, db, loader) {
   m.isAdmin = false
   m.isBotAdmin = false
   m.groupName = ''
+  // Daftar peserta ikut disimpan supaya lapisan lain (GroupAccess / Routing)
+  // tidak perlu memanggil groupMetadata dua kali untuk satu pesan.
+  m.__participants = []
+  m.__admins = []
   if (m.isGroup) {
     const meta = await m.getMeta()
     m.groupName = meta?.subject || ''
     const participants = meta && Array.isArray(meta.participants) ? meta.participants : []
+    m.__participants = participants
+    m.__admins = participants
+      .filter((p) => p && (p.admin === 'admin' || p.admin === 'superadmin'))
+      .map((p) => p.jid || p.id)
+      .filter(Boolean)
     // WhatsApp LID (Linked Identity): di grup dgn fitur "sembunyikan nomor",
     // pesan datang dgn participant @lid. Resolve ke nomor asli @s.whatsapp.net
     // supaya owner/admin check cocok dgn daftar berbasis nomor telepon.
@@ -269,8 +282,10 @@ async function handle(sock, db, loader, M) {
   }
 
   // ====== PERSONAL AGENT AUTO-CHAT ======
-  // Hanya owner di private chat dan hanya jika owner menyalakannya. Pesan grup
-  // maupun user biasa tidak pernah diam-diam memakai kuota AI / menjalankan alat.
+  // Private chat: hanya owner, dan hanya bila owner menyalakan auto-chat.
+  // Grup: hanya grup yang didaftarkan owner (.groupaccess) dengan auto-reply
+  // aktif, peran yang memenuhi batas role, dan (default) pesan yang men-tag bot.
+  // Selain itu tidak ada pesan yang diam-diam memakai kuota AI / menjalankan alat.
   if (!m.isCmd && Assistant.shouldAutoChat(m)) {
     try {
       await Assistant.respond(m, m.body)

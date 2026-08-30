@@ -2,7 +2,7 @@
 
 Bot WhatsApp multi-fitur berbasis **Node.js** + **Baileys**, dirancang untuk komunitas **WangStore** (hosting, VPS, dedicated server). File utama: **`index.js`**. Nomor owner diatur lewat **`.env`** dan bisa diubah kapan saja.
 
-> ✅ **101 command** terbagi dalam 17 kategori, termasuk Personal Agent dengan self-check proaktif.
+> ✅ **102 command** terbagi dalam 17 kategori, termasuk Personal Agent yang kini bisa dihubungi dari **grup tertentu** (allowlist + batas role diatur owner).
 
 ---
 
@@ -27,6 +27,7 @@ Bot WhatsApp multi-fitur berbasis **Node.js** + **Baileys**, dirancang untuk kom
 | 🎫 **Customer Service** | FAQ, Kontak, Jam Operasional, Feedback, Laporan |
 | 🧠 **Ask AI** | Tanya AI apa saja (`.ai`), provider bebas (OpenAI/Groq/OpenRouter/Gemini/DeepSeek/Ollama), API key & model diatur owner lewat `.env` **atau** WhatsApp tanpa restart, memori percakapan, mode grup/pribadi, uji koneksi |
 | 🧭 **Personal Agent** | Kepribadian & peran tetap, memori jangka panjang, instruksi natural → command, 4 mode otonomi, approval tindakan sensitif, auto-chat khusus owner, self-check kode + laporan proaktif |
+| 👥 **Agent di Grup** | Agent & Ask AI bisa dipakai dari grup **mana pun yang owner daftarkan** (`.groupaccess`), dengan **batas role per grup** (owner/admin/member/all), batas alat (`none/read/full`), rute jawaban (obrolan→grup, server/hosting→DM owner, admin→DM admin), approval selalu ke DM owner |
 | 🚨 **Monitoring Otomatis** | Notif Node Offline, Website/Panel Down, Alert RAM/CPU/Disk tinggi, Maintenance Mode, Server Minecraft Down/Pulih ke pelanggan |
 | 👑 **Owner** | Eval JS, Exec Terminal, Restart, Git Pull, Backup/Restore DB, Broadcast, Join/Leave Grup, Add/Del Owner |
 | 🎮 **Games** | Tebak Angka, Suit, Dadu, Coin Flip, Slot |
@@ -90,10 +91,40 @@ Setelah login, ketik `.menu` di chat WhatsApp untuk melihat semua command.
 | `ASSISTANT_AUTO_CHAT` | Pesan private owner tanpa prefix (`0`/`1`) |
 | `ASSISTANT_GUARDIAN` | Self-check kode otomatis (`0`/`1`) |
 | `ASSISTANT_CHECK_INTERVAL` | Interval self-check dalam menit (default `360`) |
+| `GROUP_ACCESS_ENABLED` | 0 = agent & `.ai` bungkam di semua grup (hanya chat pribadi) |
+| `GROUP_ACCESS_ENFORCE` | 1 = hanya grup yang masuk allowlist owner (default). 0 = semua grup boleh |
+| `GROUP_ACCESS_ROLE` | Batas role memakai agent/AI di grup: `owner` \| `admin` (default) \| `member` \| `all` |
+| `GROUP_AGENT_TOOLS` | Alat yang boleh dijalankan agent di grup: `none` \| `read` (default) \| `full` |
+| `GROUP_AGENT_ROUTE` | Ke mana jawaban dikirim: `smart` (default) \| `group` \| `private` \| `admin` |
+| `GROUP_AGENT_MENTION` | 1 = auto-reply di grup hanya bila bot di-tag (default) |
+| `GROUP_AGENT_AUTOREPLY` | 1 = agent menjawab pesan non-command di grup (default 0) |
+| `GROUP_ACCESS_ALLOW` | Bootstrap allowlist saat start, pisahkan koma (JID grup, bukan link undangan) |
 
 > **Monitoring hosting** butuh **Application API Key** Pterodactyl. Jika tidak diisi, fitur monitoring node nonaktif tetapi cek status website tetap jalan.
 
 > 🧠 **Ask AI dan Personal Agent** memakai 3 nilai yang sama: `AI_API_URL`, `AI_API_KEY`, `AI_MODEL`. Kalau tidak diisi, self-check Guardian tetap bekerja tanpa AI, tetapi percakapan `.ai`/`.asisten` nonaktif. Konfigurasi provider: **[`docs/AI.md`](docs/AI.md)**. Panduan agent: **[`docs/ASSISTANT.md`](docs/ASSISTANT.md)**.
+
+### 👥 Menghubungi agent dari grup
+
+Agent dan Ask AI menjawab di grup **hanya** bila owner mendaftarkan grup itu:
+
+```text
+.groupaccess listgrup                 # lihat JID grup yang bot ikuti
+.groupaccess add <jid>                # atau: ketik .groupaccess add dari dalam grupnya
+.groupaccess role admin <jid>         # owner + admin grup saja yang boleh memanggil
+.groupaccess tools read <jid>         # di grup agent cuma alat baca-saja (default)
+.groupaccess route smart <jid>        # obrolan -> grup; server/hosting -> DM owner
+.groupaccess test agent <jid>         # cek keputusan gerbang
+```
+
+Rute `smart` memisahkan jawaban: obrolan biasa tetap tampil di grup, sementara
+soal **server/hosting/Minecraft** dikirim ke **DM owner** (+ penanya) dan urusan
+**admin** ke **DM admin grup**. Permintaan persetujuan tindakan sensitif selalu
+pindah ke DM owner — grup tidak pernah menerima ID approval.
+Detail lengkap + semua saklar: **[`docs/GROUP-ACCESS.md`](docs/GROUP-ACCESS.md)**.
+
+> 🔒 Pengaturan ini khusus owner. Admin grup tidak bisa membuka/menutup akses
+> agent lewat `.groupsetting`.
 
 ### 👑 Mengubah Owner
 Owner bisa diubah kapan saja **tanpa edit kode**:
@@ -142,8 +173,10 @@ wangbot/
     ├── database.js       # Database JSON + auto-save
     ├── connection.js     # Koneksi WhatsApp (Baileys) + reconnect
     ├── handler.js        # Router pesan, permission, rate-limit, AFK, FAQ
+    │                     #   + metadata peserta grup untuk gerbang akses
     ├── events/groups.js  # Welcome/Goodbye/Rules otomatis
-    ├── lib/              # ai, assistant, persona, guardian, code-health,
+    ├── lib/              # group-access & routing (akses grup + rute jawaban),
+    │                     # ai, assistant, persona, guardian, code-health,
     │                     # monitor, mc, marketing, moderation, logger, dll.
     └── commands/         # 101 command dalam 17 folder kategori
 ```
@@ -167,6 +200,8 @@ wangbot/
 .asisten cek kesehatan bot     # agent memilih & menjalankan alat yang aman
 .persona name Aruna            # bentuk identitas agent tanpa restart
 .agentset mode safe            # baca otomatis, perubahan butuh approval
+.groupaccess add               # (owner) izinkan grup tempat command ini dipakai
+.groupaccess role admin <jid>  # (owner) siapa boleh memanggil agent di grup itu
 .selfcheck deep                # audit source + jalankan seluruh test
 .aiset api https://api.groq.com/openai/v1   # owner: set endpoint AI
 .aiset key gsk_xxxx            # owner: set API key (disamarkan di chat & log)
@@ -230,7 +265,8 @@ Jika tetap `@lid` di `.id`, berarti nomor asli tidak tersedia di metadata grup (
 WangBot punya test yang benar-benar menjalankan kode (bukan sekadar cek sintaks):
 
 ```bash
-npm test                 # core + plumbing + Minecraft + AI + nomor + Personal Agent
+npm test                 # core + plumbing + Minecraft + AI + nomor + Personal Agent + akses grup
+npm run test:group       # khusus gerbang akses grup: 103 assertion
 npm run test:mc          # khusus Minecraft: 70 assertion (SLP, RCON, Client API, alert, command)
 npm run test:ai          # khusus Ask AI (provider, error, command, keamanan log)
 npm run test:assistant   # persona, planner JSON, policy/approval, memori, dan scanner kode
@@ -250,11 +286,13 @@ npm run fake:ai &
 FAKE_AI=http://127.0.0.1:8793 npm run test:ai   # -> 79 assertion
 ```
 
-Hasil terakhir: seluruh suite lulus, termasuk **50/50** pemeriksaan Personal Agent.
+Hasil terakhir: seluruh suite lulus — **420 assertion** (core 21, plumbing 21, Minecraft 70,
+Ask AI 98, nomor/target 57, Personal Agent 50, akses grup 103).
 Rincian temuan & perbaikan: **[`AUDIT.md`](AUDIT.md)**.
 Panduan fitur server Minecraft: **[`docs/MINECRAFT.md`](docs/MINECRAFT.md)**.
 Panduan Ask AI (resep OpenAI/Groq/OpenRouter/Gemini/Ollama): **[`docs/AI.md`](docs/AI.md)**.
 Panduan Personal Agent (persona, otonomi, approval, Guardian): **[`docs/ASSISTANT.md`](docs/ASSISTANT.md)**.
+Panduan akses grup agent/AI (allowlist owner + batas role + rute jawaban): **[`docs/GROUP-ACCESS.md`](docs/GROUP-ACCESS.md)**.
 
 ---
 © WangStore — MIT License

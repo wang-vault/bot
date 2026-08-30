@@ -1,6 +1,7 @@
 const Assistant = require('../../lib/assistant')
 const Persona = require('../../lib/persona')
 const Guardian = require('../../lib/guardian')
+const GroupAccess = require('../../lib/group-access')
 
 module.exports = {
   name: 'agentset',
@@ -9,6 +10,9 @@ module.exports = {
   isOwner: true,
   isPrivate: true,
   desc: 'Atur otonomi, auto-chat, memori, dan penjaga kode Personal Agent.',
+  // Akses per grup (allowlist + role) sengaja TIDAK di sini: diatur lewat
+  // .groupaccess karena berlaku juga untuk Ask AI, dan hanya owner yang boleh.
+  groupAccess: true,
   use: 'status | on|off | mode <chat|supervised|safe|autonomous> | autochat <on|off> | guardian <on|off> | interval <menit> | errors <on|off> | healthy <on|off> | memory | remember <key> <isi> | forget <key> | clearhistory | pending',
   run: async (m) => {
     const raw = String(m.args || '').trim()
@@ -30,10 +34,12 @@ module.exports = {
       const value = onOff(parts[0])
       if (value === null) return m.reply(`Contoh: \`${P}agentset autochat on\``)
       Assistant.setOption(m.db, 'autoChat', value)
+      const groupAuto = GroupAccess.resolve(m.db).autoReply
       return m.reply(
         value
-          ? '✅ Auto-chat aktif. Pesan biasa dari owner di chat pribadi akan langsung ditangani asisten tanpa prefix.'
-          : `⏸️ Auto-chat nonaktif. Gunakan \`${P}asisten <instruksi>\`.`
+          ? `✅ Auto-chat aktif. Pesan biasa dari owner di chat pribadi langsung ditangani asisten tanpa prefix.\n` +
+            `Di grup: ${groupAuto ? '✅ auto-reply aktif untuk grup yang mengizinkannya (\`' + P + 'groupaccess autochat on <jid>\`) — default harus tag bot.' : '🚫 masih mati. Nyalakan per grup lewat `' + P + 'groupaccess autochat on <jid>`.'}`
+          : `⏸️ Auto-chat nonaktif (private & grup). Gunakan \`${P}asisten <instruksi>\`.`
       )
     }
     if (sub === 'guardian') {
@@ -62,6 +68,16 @@ module.exports = {
       )
     }
     if (sub === 'pending') return m.reply(Assistant.formatPending(m.db, P))
+    if (sub === 'group' || sub === 'grup') {
+      if (!parts.length) return m.reply(GroupAccess.statusText(m))
+      return m.reply(
+        `🗂️ Pengaturan akses grup ada di command khusus owner:\n` +
+          `• ${P}groupaccess add <jid>        # izinkan satu grup\n` +
+          `• ${P}groupaccess role admin <jid> # batas role di grup itu\n` +
+          `• ${P}groupaccess tools read <jid> # alat yang boleh dipakai di grup\n` +
+          `• ${P}groupaccess listgrup         # lihat JID grup yang bot ikuti`
+      )
+    }
     if (sub === 'memory' || sub === 'memori') return m.reply(memoryText(m))
     if (sub === 'remember' || sub === 'ingat') {
       const key = parts.shift()
@@ -117,9 +133,22 @@ function statusText(m) {
     `Hasil akhir : ${g.lastFingerprint || '-'} (${g.lastErrors} error, ${g.lastWarnings} warning)\n` +
     `Memori      : ${Persona.memoryEntries(m.db).length}/50 fakta\n` +
     `Aktivitas   : ${stats.chats || 0} chat | ${stats.actions || 0} tindakan | ${stats.approvals || 0} approval\n` +
-    `Pending     : ${Assistant.pendingList(m.db).length}\n\n` +
+    `Pending     : ${Assistant.pendingList(m.db).length}\n` +
+    groupLine(m) +
+    `\n` +
     modeExplanation(a.mode) +
     `\n\nDetail pengaturan: \`${m.config.prefix}agentset help\``
+  )
+}
+
+function groupLine(m) {
+  const g = GroupAccess.resolve(m.db)
+  const rows = GroupAccess.listGroups(m.db)
+  if (!g.enabled) return `Akses grup   : ⏸️ dimatikan (hanya chat pribadi)\n`
+  return (
+    `Akses grup   : ✅ aktif — ${rows.length} grup diizinkan (batas role default: *${g.role}*)\n` +
+    `Alat di grup  : ${g.tools} | rute jawaban: ${g.route} | auto-reply: ${g.autoReply ? 'on' : 'off'}\n` +
+    `Atur          : \`${m.config.prefix}groupaccess\`\n`
   )
 }
 
@@ -148,6 +177,8 @@ function helpText(m) {
     `${P}agentset remember <key> <isi>\n` +
     `${P}agentset forget <key>|all\n` +
     `${P}agentset clearhistory\n` +
-    `${P}agentset pending`
+    `${P}agentset pending
+` +
+    `${P}agentset group            # ringkasan akses grup (atur: ${P}groupaccess)`
   )
 }

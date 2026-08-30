@@ -183,3 +183,26 @@ nilai (`db` / `env` / `default`).
 | Jawaban terasa "bukan WangStore" | Ubah peran: `.aiset system Kamu adalah CS WangStore...` |
 
 Perintah diagnostik tercepat: **`.aiset status`** lalu **`.aiset test`**.
+
+
+## 👥 Ask AI di grup: hanya grup yang diizinkan owner
+
+`.aiset group on|off` adalah saklar **global**. Di atasnya ada gerbang per grup
+yang dipakai bersama dengan Personal Agent:
+
+```text
+.groupaccess add <jid>          # izinkan grup (atau ketik dari dalam grupnya)
+.groupaccess ai off <jid>       # grup boleh, tapi .ai dimatikan di situ
+.groupaccess role member <jid>  # siapa di grup yang boleh bertanya
+.groupaccess route group <jid>  # jawaban selalu tampil di grup (default: smart)
+.groupaccess listgrup           # lihat JID grup yang bot ikuti
+```
+
+Default baru: **grup harus masuk allowlist**. Kalau ingin kembali ke perilaku
+lama (semua grup boleh), owner bisa menjalankan `.groupaccess enforce off`
+(batas role tetap ditegakkan).
+
+Pada rute `smart`, jawaban AI yang berisi topik server/hosting/data internal
+tidak diumbar di grup melainkan dikirim ke DM owner (+ penanya), sementara
+obrolan umum tetap tampil di grup. Detail:
+[docs/GROUP-ACCESS.md](GROUP-ACCESS.md).
