@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "test": "node test/core.test.js && node test/plumbing.test.js && node test/mc.test.js && node test/ai.test.js && node test/target.test.js && node test/assistant.test.js && node test/group-access.test.js",
+    "test": "node test/core.test.js && node test/plumbing.test.js && node test/mc.test.js && node test/ai.test.js && node test/target.test.js && node test/assistant.test.js && node test/group-access.test.js && node test/pingl.test.js",
     "test:assistant": "node test/assistant.test.js",
     "test:dryrun": "node test/dryrun.js",
     "fake:panel": "node test/fake-panel.js",
@@ -21,7 +21,8 @@
     "fake:mc": "node test/fake-mc.js",
     "fake:ai": "node test/fake-ai.js",
     "fake:client-panel": "node test/fake-client-panel.js",
-    "test:group": "node test/group-access.test.js"
+    "test:group": "node test/group-access.test.js",
+    "test:pingl": "node test/pingl.test.js"
   },
   "keywords": [
     "whatsapp",

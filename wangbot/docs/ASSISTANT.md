@@ -98,7 +98,12 @@ Ubah mode:
 
 Allowlist mencakup status/runtime/statistik, status panel dan resource, informasi
 layanan, laporan/feedback, status Minecraft, self-check, backup, cek monitoring,
-dan beberapa tindakan operasional.
+tes jaringan keluar (`.pingl` — ping IP/domain & cek port), dan beberapa tindakan
+operasional.
+
+`pingl` adalah alat **baca-saja**: di grup yang diizinkan owner (`.groupaccess tools
+read`) agent boleh langsung menjalankan ping; hasilnya diperlakukan seperti jawaban
+lainnya — masuk DM owner kalau rute grup mengarahkan topik server/hosting ke privat.
 
 Command berikut **tidak pernah diberikan kepada model**, pada mode apa pun:
 

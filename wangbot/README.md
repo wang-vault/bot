@@ -2,7 +2,7 @@
 
 Bot WhatsApp multi-fitur berbasis **Node.js** + **Baileys**, dirancang untuk komunitas **WangStore** (hosting, VPS, dedicated server). File utama: **`index.js`**. Nomor owner diatur lewat **`.env`** dan bisa diubah kapan saja.
 
-> ✅ **102 command** terbagi dalam 17 kategori, termasuk Personal Agent yang kini bisa dihubungi dari **grup tertentu** (allowlist + batas role diatur owner).
+> ✅ **103 command** terbagi dalam 17 kategori, termasuk Personal Agent yang kini bisa dihubungi dari **grup tertentu** (allowlist + batas role diatur owner).
 
 ---
 
@@ -12,7 +12,7 @@ Bot WhatsApp multi-fitur berbasis **Node.js** + **Baileys**, dirancang untuk kom
 |---|---|
 | 👋 **Community** | Auto Welcome, Auto Goodbye, Auto Rules, Auto Website, Auto Link Grup, AFK + Auto Remove AFK, Auto Reply FAQ |
 | 🛡️ **Moderasi** | Anti Link, Anti Promo, Anti Spam, Anti Flood, Anti Virtex, Anti Tag All, Auto Delete, Warning System, Auto Kick (opsional), Whitelist Link & Member, ON/OFF per grup |
-| 📊 **Monitoring Hosting** | Status Website & Panel, Status/Ping Node, Resource (CPU/RAM/Disk), Spesifikasi Node, Jumlah Server Aktif |
+| 📊 **Monitoring Hosting** | Status Website & Panel, Status/Ping Node, Resource (CPU/RAM/Disk), Spesifikasi Node, Jumlah Server Aktif, **Ping ke IP/domain luar + cek port** (`.pingl`) |
 | 🎮 **Server Minecraft** | Status server MC pelanggan (SLP), Player Online, MOTD & Versi, Resource per Server, Alert Down/Otomatis Pulih, Restart & Power, Console Command (panel/RCON) |
 | 📦 **Informasi Layanan** | Paket Hosting, VPS, Dedicated Server, Public IP, Kontak Admin, Website, Link Grup |
 | 📢 **Marketing** | Auto Promotion, Daftar Grup Promosi, Multi Template, Jadwal & Interval, Pause/Resume, Kirim Manual, Statistik |
@@ -81,6 +81,10 @@ Setelah login, ketik `.menu` di chat WhatsApp untuk melihat semua command.
 | `PANEL_API_URL` | URL Pterodactyl (untuk monitoring) |
 | `PANEL_API_TOKEN` | Application API key Pterodactyl |
 | `MONITOR_INTERVAL` | Interval cek monitoring (menit) |
+| `PINGL_STAFF` | Nomor tambahan (pisahkan koma) yang boleh memakai `.pingl` selain owner |
+| `PING_COUNT` / `PING_MAX_COUNT` | Jumlah paket ping default / maksimum (default 4 / maks 15) |
+| `PING_TIMEOUT` | Timeout per paket dalam detik (default 2) |
+| `PING_BIN` | Path binary ping khusus (mis. `/bin/ping` di container) |
 | `ALERT_RAM/CPU/DISK_THRESHOLD` | Batas alert otomatis (persen) |
 | `LOG_LEVEL` | Level log baileys (default: `warn`) |
 | `AI_API_URL` | URL endpoint AI, mis. `https://api.openai.com/v1` |
@@ -125,6 +129,31 @@ Detail lengkap + semua saklar: **[`docs/GROUP-ACCESS.md`](docs/GROUP-ACCESS.md)*
 
 > 🔒 Pengaturan ini khusus owner. Admin grup tidak bisa membuka/menutup akses
 > agent lewat `.groupsetting`.
+
+### 📡 Ping keluar (`.pingl`)
+
+Owner (dan staf yang didaftarkan) bisa menguji koneksi keluar **dari server bot** —
+berguna saat ada pelanggan mengeluh lambat atau tidak bisa connect:
+
+```text
+.pingl 8.8.8.8                     # ping IP
+.pingl google.com 8                # 8 paket
+.pingl mc.tokosugoi.id:25565       # cek port (TCP handshake) — terbuka/tertutup
+.pingl 1.1.1.1, 8.8.8.8, google.com   # beberapa sekaligus (maks 5)
+.pingl mode tcp 1.1.1.1:443        # paksa TCP, tanpa ICMP
+.pingl staff add 0812xxxx          # izinkan nomor staf memakai .pingl
+```
+
+Yang diukur: min/avg/max/jitter, packet loss, TTL, hasil resolve DNS, dan status
+verdik (🟢/🟡/🔴). Kalau container tidak boleh membuat raw socket, bot otomatis
+jatuh ke pengukuran handshake TCP (port 443 → 80).
+
+Keamanan: alamat divalidasi ketat dan `ping` dijalankan lewat `spawn` dengan
+argumen terpisah (bukan string shell), jadi `8.8.8.8; rm -rf /` berhenti sebagai
+"alamat tidak sah", bukan sebagai perintah. Jumlah paket dibatasi, target
+maksimum 5 per tes, dan host yang diuji dicatat ke `data/logs/command.log`.
+Command ini juga bisa dipakai Personal Agent sebagai alat baca — hasilnya
+dikirim ke chat privat, tidak diumbar di grup.
 
 ### 👑 Mengubah Owner
 Owner bisa diubah kapan saja **tanpa edit kode**:
@@ -195,6 +224,8 @@ wangbot/
 .sticker (reply gambar)        # buat sticker
 .smeme atas|bawah (reply)      # sticker meme
 .status                        # monitoring hosting
+.pingl 8.8.8.8                 # (owner/staf) ping keluar dari server bot
+.pingl mc.customer.id:25565    # cek port game pelanggan terbuka atau tidak
 .paket                         # info layanan
 .ai kenapa server mc lag?      # tanya AI dengan kepribadian bot
 .asisten cek kesehatan bot     # agent memilih & menjalankan alat yang aman
@@ -266,7 +297,8 @@ WangBot punya test yang benar-benar menjalankan kode (bukan sekadar cek sintaks)
 
 ```bash
 npm test                 # core + plumbing + Minecraft + AI + nomor + Personal Agent + akses grup
-npm run test:group       # khusus gerbang akses grup: 103 assertion
+npm run test:group       # khusus gerbang akses grup: 106 assertion
+npm run test:pingl       # khusus ping keluar + netprobe: 68 assertion
 npm run test:mc          # khusus Minecraft: 70 assertion (SLP, RCON, Client API, alert, command)
 npm run test:ai          # khusus Ask AI (provider, error, command, keamanan log)
 npm run test:assistant   # persona, planner JSON, policy/approval, memori, dan scanner kode
@@ -286,8 +318,8 @@ npm run fake:ai &
 FAKE_AI=http://127.0.0.1:8793 npm run test:ai   # -> 79 assertion
 ```
 
-Hasil terakhir: seluruh suite lulus — **420 assertion** (core 21, plumbing 21, Minecraft 70,
-Ask AI 98, nomor/target 57, Personal Agent 50, akses grup 103).
+Hasil terakhir: seluruh suite lulus — **491 assertion** (core 21, plumbing 21, Minecraft 70,
+Ask AI 98, nomor/target 57, Personal Agent 50, akses grup 106, ping luar 68).
 Rincian temuan & perbaikan: **[`AUDIT.md`](AUDIT.md)**.
 Panduan fitur server Minecraft: **[`docs/MINECRAFT.md`](docs/MINECRAFT.md)**.
 Panduan Ask AI (resep OpenAI/Groq/OpenRouter/Gemini/Ollama): **[`docs/AI.md`](docs/AI.md)**.

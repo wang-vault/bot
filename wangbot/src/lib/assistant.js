@@ -41,6 +41,7 @@ const TOOL_RULES = Object.freeze({
   promostats: 'read',
   listfeedback: 'read',
   listlaporan: 'read',
+  pingl: 'read',
   mcservers: 'read',
   mcstatus: 'read',
   mcplayers: 'read',
@@ -496,6 +497,10 @@ async function runCommand(m, normalized, options = {}) {
     // proposal dan dapat mengubah perilaku command (contoh: broadcast media).
     quoted: null,
     mentionedJid: [],
+    // Command khusus-owner yang risikonya hanya membaca (mis. .pingl) tetap
+    // boleh dijalankan agent di grup yang sudah diizinkan owner: hak datang
+    // dari gerbang akses + daftar TOOL_RULES, bukan dari siapa yang bicara.
+    agentAuthorized: true,
     reply: async (text, opt = {}) => {
       const body = String(text || '')
       outputs.push(body.slice(0, 3500))

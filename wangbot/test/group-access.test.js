@@ -435,6 +435,32 @@ async function main() {
   await Handler.handle(sockL, db, fakeLoader, rawMsg('halo bot lagi', MEMBER))
   ok('menonaktifkan auto-chat menghentikan semuanya', Ai._calls === 1)
 
+  console.log("\n[H2] ALAT BARU DI GRUP: .pingl DIPAKAI LEWAT AGENT")
+  // Owner mengizinkan alat baca di grup; agent menjalankan .pingl, hasilnya
+  // tidak diumbar ke grup karena kategorinya monitoring (topik ops).
+  const NetProbe = require(path.join(BOT, 'src/lib/netprobe'))
+  GroupAccess.setOption(db, GROUP, 'tools', 'read')
+  GroupAccess.setOption(db, GROUP, 'role', 'all')
+  GroupAccess.setOption(db, GROUP, 'mention', false) // kali ini tidak perlu di-tag
+  Assistant.clearAgentHistory('agent:' + GROUP)
+  Ai.ask = async () => ({ ok: true, text: JSON.stringify({ reply: 'Aku cek koneksi ke 127.0.0.1 dulu', actions: [{ command: 'pingl', args: '127.0.0.1 1', reason: 'uji jaringan' }], remember: [] }), model: 'fake', provider: 'fake', ms: 1 })
+  const sockPing = makeSock()
+  const senderPing = fresh()
+  Handler.invalidateMeta(GROUP)
+  await Handler.handle(sockPing, db, fakeLoader, rawMsg('.asisten ping 127.0.0.1', senderPing))
+  const pingGroup = sockPing.sent.filter((x) => x.jid === GROUP).map((x) => textOf(x.content)).join('\n')
+  const pingOwner = sockPing.sent.filter((x) => x.jid === OWNER).map((x) => textOf(x.content)).join('\n')
+  ok('agent menjalankan .pingl di grup (alat baca)', /PING 127\.0\.0\.1/.test(pingOwner) || /pingl/.test(pingGroup), `grup: ${pingGroup.slice(0, 120)} | owner: ${pingOwner.slice(0, 120)}`)
+  ok('hasil ping tidak diumbar mentah di grup', !/min \d|Latensi/.test(pingGroup), pingGroup.slice(0, 200))
+  GroupAccess.setOption(db, GROUP, 'tools', 'none')
+  Ai.ask = async () => ({ ok: true, text: JSON.stringify({ reply: 'oke', actions: [{ command: 'pingl', args: '127.0.0.1', reason: 'uji' }], remember: [] }), model: 'fake', provider: 'fake', ms: 1 })
+  const sockPingOff = makeSock()
+  Handler.invalidateMeta(GROUP)
+  await Handler.handle(sockPingOff, db, fakeLoader, rawMsg('.asisten ping 127.0.0.1', fresh()))
+  ok('tools none = agent grup tidak menjalankan .pingl', !sockPingOff.sent.some((x) => /PING 127/.test(textOf(x.content))), JSON.stringify(sockPingOff.sent.map((x) => textOf(x.content).slice(0, 40))))
+  GroupAccess.setOption(db, GROUP, 'tools', 'read')
+  void NetProbe
+
   console.log('\n[I] COMMAND .groupaccess LEWAT HANDLER')
   const sockOwner = makeSock()
   await Handler.handle(sockOwner, db, loader, rawMsg('.groupaccess', OWNER, false))

@@ -78,6 +78,11 @@ Permintaan persetujuan **tidak pernah muncul di grup**: detail + ID dikirim ke
 Setelah owner `.approve <ID>` di chat pribadinya, hasilnya dilaporkan balik ke grup
 asal (ringkasan; detail tetap di DM bila topiknya privat).
 
+> Alat `read` dijalankan atas nama bot, bukan atas nama pengirim. Karena itu command
+> khusus-owner yang hanya membaca (contoh: `.pingl`) boleh dieksekusi agent di grup
+> yang diizinkan — penandanya `m.agentAuthorized` di `src/lib/assistant.js`. Untuk
+> command berisiko tulis, hak itu tidak diberikan: selalu lewat `.approve` owner.
+
 ## 4. Ke mana jawaban dikirim (rute)
 
 ```text

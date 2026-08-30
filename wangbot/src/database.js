@@ -120,6 +120,13 @@ const DEFAULT_DB = {
     requests: {}, // jid -> percobaan akses yang belum diizinkan owner
     stats: { allowed: 0, denied: 0, routed: 0 },
   },
+  // Ping keluar (.pingl — lihat src/commands/monitoring/pingl.js). Staf adalah
+  // nomor yang boleh memakai ping keluar di luar owner; host diuji lewat
+  // NetProbe (spawn tanpa shell) sehingga input chat tidak pernah jadi perintah.
+  pingl: {
+    staff: [], // jid yang boleh memakai .pingl
+    stats: { runs: 0, failed: 0, lastAt: 0, lastHost: '' },
+  },
   // Ask AI (lihat src/lib/ai.js). Semua nilai di sini adalah override runtime
   // yang di-set owner lewat command .aiset; kalau kosong/negatif, nilai dari
   // .env (AI_API_URL, AI_API_KEY, AI_MODEL, ...) yang dipakai.
