@@ -102,6 +102,31 @@ const DEFAULT_DB = {
       runtimeSeen: {},
     },
   },
+  // Gerbang akses grup untuk Personal Agent & Ask AI (lihat src/lib/group-access.js).
+  // Nilai di lapisan ini adalah DEFAULT untuk semua grup; sebuah grup boleh
+  // meng-override sebagian. Allowlist diisi OWNER saja — admin grup tidak punya
+  // jalan masuk ke sini (.groupsetting tidak menyentuh blok ini).
+  groupAccess: {
+    enabled: null, // saklar utama agent/AI di grup
+    enforce: null, // true = wajib allowlist, false = semua grup boleh
+    agent: null, // Personal Agent boleh di grup (default grup baru)
+    ai: null, // Ask AI boleh di grup (default grup baru)
+    role: '', // owner | admin | member | all
+    tools: '', // none | read | full (batas alat agent di grup)
+    route: '', // smart | group | private | admin | owner (ke mana jawaban dikirim)
+    mention: null, // auto-reply grup hanya saat bot di-tag
+    autoReply: null, // agent menjawab pesan non-command di grup
+    groups: {}, // jid@g.us -> { enabled, name, note, addedAt, ...override }
+    requests: {}, // jid -> percobaan akses yang belum diizinkan owner
+    stats: { allowed: 0, denied: 0, routed: 0 },
+  },
+  // Ping keluar (.pingl — lihat src/commands/monitoring/pingl.js). Staf adalah
+  // nomor yang boleh memakai ping keluar di luar owner; host diuji lewat
+  // NetProbe (spawn tanpa shell) sehingga input chat tidak pernah jadi perintah.
+  pingl: {
+    staff: [], // jid yang boleh memakai .pingl
+    stats: { runs: 0, failed: 0, lastAt: 0, lastHost: '' },
+  },
   // Ask AI (lihat src/lib/ai.js). Semua nilai di sini adalah override runtime
   // yang di-set owner lewat command .aiset; kalau kosong/negatif, nilai dari
   // .env (AI_API_URL, AI_API_KEY, AI_MODEL, ...) yang dipakai.

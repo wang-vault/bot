@@ -1,4 +1,5 @@
 const Ai = require('../../lib/ai')
+const GroupAccess = require('../../lib/group-access')
 
 // Panel konfigurasi Ask AI untuk owner: API key + URL + model (dan kawan-kawannya)
 // bisa diisi lewat WhatsApp dan disimpan di data/database.json, jadi tidak perlu
@@ -32,7 +33,13 @@ module.exports = {
       if (mode !== 'on' && mode !== 'off') return m.reply(`Contoh: \`${P}aiset group off\``)
       s.allowGroup = mode === 'on'
       db.save()
-      return m.reply(`${s.allowGroup ? '✅' : '🚫'} Ask AI di grup: *${s.allowGroup ? 'diizinkan' : 'hanya chat pribadi'}*.`)
+      const groups = GroupAccess.listGroups(db).filter((g) => g.ai).length
+      return m.reply(
+        `${s.allowGroup ? '✅' : '🚫'} Ask AI di grup: *${s.allowGroup ? 'diizinkan' : 'hanya chat pribadi'}*.\n` +
+          (s.allowGroup
+            ? `Hanya grup yang masuk allowlist owner yang benar-benar bisa memakai — saat ini ${groups} grup.\nDetail: \`${P}groupaccess\``
+            : `Saklar global ini memotong semua grup, walau grup sudah diizinkan.`)
+      )
     }
 
     // ---- header tambahan ----
@@ -117,7 +124,8 @@ module.exports = {
           `  ${P}aiset history 8 (0 = tanpa memori)\n` +
           `  ${P}aiset maxchars 1500\n` +
           `  ${P}aiset header set <Nama> <nilai>\n` +
-          `  ${P}aiset group on|off | on | off\n` +
+          `  ${P}aiset group on|off | on | off   # saklar global AI di grup\n` +
+          `  grup mana yang boleh + batas role: ${P}groupaccess\n` +
           `  ${P}aiset test | status | reset\n\n` +
           `Contoh penyedia lain ada di docs/AI.md.`
       )
@@ -146,7 +154,7 @@ function statusText(m, cfg) {
 
   let t = '🧠 *KONFIGURASI ASK AI*\n\n'
   t += `Status   : ${cfg.enabled ? '✅ AKTIF' : '⏸️ NONAKTIF'} ${tag('enabled')}\n`
-  t += `Di grup  : ${cfg.allowGroup ? '✅ boleh' : '🚫 chat pribadi saja'} ${tag('allowGroup')}\n`
+  t += `Di grup  : ${cfg.allowGroup ? `✅ boleh — ${GroupAccess.listGroups(m.db).filter((g) => g.ai).length} grup diizinkan` : '🚫 chat pribadi saja'} ${tag('allowGroup')}\n`
   t += `Provider : ${cfg.provider} ${tag('provider')}\n`
   t += `API URL  : ${cfg.baseUrl || '-'} ${tag('baseUrl')}\n`
   t += `API key  : ${Ai.mask(cfg.apiKey)} ${tag('apiKey')}\n`

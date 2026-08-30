@@ -35,6 +35,9 @@ module.exports = {
         t += `${on ? '✅' : '❌'} ${label} — *${on ? 'ON' : 'OFF'}*\n`
       }
       t += `\nUbah: *${m.config.prefix}groupsetting <fitur> on/off*\nContoh: *${m.config.prefix}groupsetting antilink on*`
+      t +=
+        `\n\n🧭 Akses Personal Agent & Ask AI di grup ini tidak diatur di sini — hanya owner yang bisa ` +
+        `membuka/menutupnya: *${m.config.prefix}groupaccess*. Admin grup tidak punya jalan masuk ke sana.`
       return m.reply(t)
     }
 

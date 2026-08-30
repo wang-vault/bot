@@ -14,14 +14,18 @@ Agent menggunakan provider/model yang sama dengan `.ai`, jadi isi dulu
    disimpan di database dan ikut digunakan oleh `.ai`.
 2. **Personal assistant** — owner dapat menulis `.asisten cek status hosting dan
    resource node`; model memilih command yang tepat dari allowlist.
-3. **Memori jangka panjang** — fakta non-rahasia tetap tersimpan setelah restart.
-4. **Tindakan dengan pagar pengaman** — pemeriksaan dapat berjalan otomatis,
+3. **Bisa diajak bicara di grup** — hanya grup yang owner daftarkan lewat
+   `.groupaccess`, dengan batas role per grup dan jawaban yang dirutekan
+   (obrolan -> grup, server/hosting -> DM owner). Lihat
+   [docs/GROUP-ACCESS.md](GROUP-ACCESS.md).
+4. **Memori jangka panjang** — fakta non-rahasia tetap tersimpan setelah restart.
+5. **Tindakan dengan pagar pengaman** — pemeriksaan dapat berjalan otomatis,
    sedangkan broadcast/restart/power server dan tindakan sensitif meminta
    `.approve <ID>`.
-5. **Guardian** — memeriksa syntax JavaScript, target `require`, command yang gagal
+6. **Guardian** — memeriksa syntax JavaScript, target `require`, command yang gagal
    load/bentrok, kesehatan database, versi Node, dan pemakaian memori. Error
    runtime dari logger juga dikumpulkan dan dilaporkan ke seluruh owner.
-6. **Deep check** — `.selfcheck deep` menjalankan seluruh `npm test` dan menyertakan
+7. **Deep check** — `.selfcheck deep` menjalankan seluruh `npm test` dan menyertakan
    hasilnya dalam laporan.
 
 ## Mulai cepat
@@ -41,7 +45,38 @@ Jika ingin berbicara tanpa prefix di chat pribadi owner:
 .agentset autochat on
 ```
 
-Auto-chat **tidak pernah aktif untuk user biasa atau di grup**.
+Auto-chat di private chat hanya untuk **owner**. Di grup, auto-chat butuh dua
+opt-in sekaligus (`agentset autochat on` + `groupaccess autochat on <jid>`) dan
+defaultnya pesan harus **men-tag bot** — jadi bot tidak mencampuri setiap
+percakapan grup.
+
+## Agent di grup (allowlist + role)
+
+```text
+.groupaccess add                    # owner: izinkan grup tempat command ini dipakai
+.groupaccess role admin <jid>       # owner + admin grup (default)
+.groupaccess tools read <jid>       # di grup: hanya alat baca-saja yang otomatis
+.groupaccess route smart <jid>      # obrolan -> grup, server/hosting -> DM owner
+```
+
+Perbedaan perilaku penting dibanding chat pribadi owner:
+
+| Aspek | Private (owner) | Grup yang diizinkan |
+|---|---|---|
+| Siapa yang boleh memanggil | hanya owner | sesuai `role` grup: `owner`/`admin`/`member`/`all` |
+| Memori jangka panjang | ikut dipakai | **tidak pernah** masuk prompt |
+| Riwayat percakapan | per nomor (`agent:<nomor>`) | per grup (`agent:<jid@g.us>`) |
+| Alat `write`/`high` | sesuai mode otonomi | otomatis hanya `read`; lainnya jadi proposal ke owner |
+| Proposal `.approve` | tampil di chat owner | **DM owner**, grup hanya dikabari |
+| Isi jawaban | apa adanya | dirutekan + disamarkan untuk non-owner |
+| Menulis memori (`ingat ...`) | boleh bila owner minta | ditolak |
+
+Command grup/admin (`kick`, `warn`, `promote`, ...) tetap tidak bisa dijalankan
+agent dari mana pun — agent hanya boleh memakai command yang ada di allowlist
+alat, dan yang menuntut konteks grup diblokir.
+
+Detail semua saklar (enforce, jeda, test, requests, rute, `.env`):
+**[docs/GROUP-ACCESS.md](GROUP-ACCESS.md)**.
 
 ## Tingkat otonomi
 
@@ -63,7 +98,12 @@ Ubah mode:
 
 Allowlist mencakup status/runtime/statistik, status panel dan resource, informasi
 layanan, laporan/feedback, status Minecraft, self-check, backup, cek monitoring,
-dan beberapa tindakan operasional.
+tes jaringan keluar (`.pingl` — ping IP/domain & cek port), dan beberapa tindakan
+operasional.
+
+`pingl` adalah alat **baca-saja**: di grup yang diizinkan owner (`.groupaccess tools
+read`) agent boleh langsung menjalankan ping; hasilnya diperlakukan seperti jawaban
+lainnya — masuk DM owner kalau rute grup mengarahkan topik server/hosting ke privat.
 
 Command berikut **tidak pernah diberikan kepada model**, pada mode apa pun:
 
@@ -164,9 +204,11 @@ dari pola API key/token, dan dibatasi satu laporan per fingerprint per jam.
 | `.agentset healthy on\|off` | Laporan berkala saat sehat. |
 | `.agentset memory\|remember\|forget` | Kelola memori jangka panjang. |
 | `.agentset pending` | Daftar tindakan menunggu approval. |
+| `.agentset group` | Ringkasan grup yang boleh memakai agent (atur: `.groupaccess`). |
 | `.approve <ID>` | Setujui dan jalankan tindakan. |
 | `.reject <ID>` | Batalkan tindakan. |
 | `.selfcheck [deep]` | Audit kesehatan bot sekarang. |
+| `.groupaccess ...` | (owner) grup mana yang boleh memanggil agent + batas role. |
 
 ## Konfigurasi `.env`
 
@@ -178,6 +220,13 @@ ASSISTANT_MODE=safe
 ASSISTANT_AUTO_CHAT=0
 ASSISTANT_GUARDIAN=1
 ASSISTANT_CHECK_INTERVAL=360
+# akses grup (lihat docs/GROUP-ACCESS.md)
+GROUP_ACCESS_ENFORCE=1
+GROUP_ACCESS_ROLE=admin
+GROUP_AGENT_TOOLS=read
+GROUP_AGENT_ROUTE=smart
+GROUP_AGENT_AUTOREPLY=0
+GROUP_AGENT_MENTION=1
 ASSISTANT_REPORT_RUNTIME_ERRORS=1
 ASSISTANT_REPORT_HEALTHY=0
 ```

@@ -9,6 +9,7 @@ const { handleParticipantsUpdate } = require('./src/events/groups')
 const Monitor = require('./src/lib/monitor')
 const Marketing = require('./src/lib/marketing')
 const Guardian = require('./src/lib/guardian')
+const GroupAccess = require('./src/lib/group-access')
 const logger = require('./src/lib/logger')
 
 // ---------- Database ----------
@@ -23,6 +24,25 @@ logger.info(`Loaded ${loader.commands.length} command dari ${new Set(loader.comm
 if (db.data.runtime && db.data.runtime.prefix) {
   config.prefix = db.data.runtime.prefix
   logger.info(`Prefix runtime: "${config.prefix}"`)
+}
+
+// ---------- Akses grup agent/AI ----------
+// Grup yang boleh menghubungi Personal Agent & Ask AI hanya yang didaftarkan
+// owner. GROUP_ACCESS_ALLOW di .env dipakai untuk bootstrap awal (mis. server
+// baru) supaya owner tidak perlu mengetik JID manual setelah scan QR.
+{
+  const boot = GroupAccess.bootstrap(db)
+  const cfg = GroupAccess.resolve(db)
+  const n = Object.keys(cfg.groups).length
+  if (boot.added) logger.info(`Allowlist grup: ${boot.added} grup ditambahkan dari .env${boot.skipped ? ` (${boot.skipped} nilai bukan JID grup dilewati)` : ''}`)
+  logger.info(
+    `Akses grup agent/AI: ${cfg.enabled ? 'aktif' : 'NONAKTIF'} | ` +
+      `${cfg.enforce ? `allowlist wajib (${n} grup)` : 'semua grup (longgar)'} | ` +
+      `batas role: ${cfg.role} | alat: ${cfg.tools}`
+  )
+  if (cfg.enabled && cfg.enforce && !n) {
+    logger.warn('Belum ada grup di allowlist: agent/AI hanya menjawab di chat pribadi. Daftarkan: .groupaccess add <jid>')
+  }
 }
 
 // ---------- Global error guard ----------
