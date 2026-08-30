@@ -12,7 +12,15 @@ const func = {
   /** Cek apakah jid owner */
   isOwner(jid, db) {
     const config = require('../config')
-    return config.envOwners.includes(jid) || (db.data.owners || []).includes(jid)
+    const owners = [...config.envOwners, ...(db.data.owners || [])]
+    if (owners.includes(jid)) return true
+    // Fallback: jika sender pakai @lid (private chat, fitur sembunyikan nomor),
+    // bandingkan bagian numeriknya saja dengan daftar owner.
+    if (jid && jid.endsWith('@lid')) {
+      const lidNum = jid.replace('@lid', '')
+      return owners.some((o) => o.replace(/@s\.whatsapp\.net|@lid/, '') === lidNum)
+    }
+    return false
   },
 
   /** Ambil metadata grup (dengan cache singkat) */
