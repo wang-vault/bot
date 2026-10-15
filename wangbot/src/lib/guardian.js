@@ -2,6 +2,7 @@ const crypto = require('crypto')
 const config = require('../config')
 const logger = require('./logger')
 const Persona = require('./persona')
+const Identity = require('./identity')
 const CodeHealth = require('./code-health')
 
 let _sock = null
@@ -70,10 +71,11 @@ function setOption(db, key, value) {
   return { ok: true, key, value: g[key] }
 }
 
+// Owner selalu dikirimi pesan lewat NOMOR (@s.whatsapp.net). Entri LID yang
+// nomornya sudah diketahui dikonversi; yang belum diketahui dilewati (bukan
+// dikirimi ke JID LID) — lihat src/lib/identity.js.
 function ownerJids(db) {
-  return [...new Set([...config.envOwners, ...((db && db.data && db.data.owners) || [])])].filter(
-    (jid) => typeof jid === 'string' && jid.endsWith('@s.whatsapp.net')
-  )
+  return Identity.ownerJids(db)
 }
 
 async function sendOwners(sock, db, text) {

@@ -370,17 +370,24 @@ function scanRuntime(root, db) {
       })
     }
 
-    const owners = new Set([
-      ...((require('../config').envOwners) || []),
-      ...((db.data.owners) || []),
-    ])
-    if (!owners.size) {
+    // Owner = identitas NOMOR WhatsApp. Entri LID dipetakan dulu; yang belum
+    // punya nomor dilaporkan terpisah supaya owner tidak "menghilang" diam-diam.
+    const ownerEntries = require('./identity').ownerEntries(db)
+    if (!ownerEntries.pn.length && !ownerEntries.lids.length) {
       issues.push({
         id: 'security-no-owner',
         severity: 'error',
         title: 'Bot tidak mempunyai owner',
         detail: 'OWNER_NUMBER kosong dan database tidak memiliki owner tambahan.',
         hint: 'Isi OWNER_NUMBER di .env sebelum mengekspos bot.',
+      })
+    } else if (ownerEntries.unresolved.length) {
+      issues.push({
+        id: 'owner-lid-unresolved',
+        severity: 'warning',
+        title: 'Owner tersimpan sebagai LID, nomornya belum diketahui',
+        detail: ownerEntries.unresolved.join(', '),
+        hint: 'Jalankan .addowner <nomor> dengan nomor aslinya, atau isi OWNER_LID_MAP=<lid>:<nomor> di .env lalu restart.',
       })
     }
   }

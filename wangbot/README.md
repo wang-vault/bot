@@ -156,9 +156,14 @@ Command ini juga bisa dipakai Personal Agent sebagai alat baca — hasilnya
 dikirim ke chat privat, tidak diumbar di grup.
 
 ### 👑 Mengubah Owner
-Owner bisa diubah kapan saja **tanpa edit kode**:
+Owner dikenali lewat **NOMOR WhatsApp** (bukan LID / JID), dan bisa diubah kapan
+saja **tanpa edit kode**:
 - **Via `.env`:** ubah `OWNER_NUMBER` lalu restart.
 - **Via command (tanpa restart):** `.addowner 0812xxxx` dan `.delowner 0812xxxx`.
+
+Kalau WhatsApp mengirim pesan owner sebagai `@lid` (grup "sembunyikan nomor" atau
+chat pribadi baru), bot otomatis mencari nomor aslinya lebih dulu — detailnya di
+[🪪 Identitas](#-identitas-nomor-whatsapp-bukan-lid) dan `docs/IDENTITY.md`.
 
 ### 🔢 Semua input orang pakai NOMOR, bukan JID
 Owner & admin tidak perlu tahu bentuk JID (`628123@s.whatsapp.net`). Cukup ketik nomor;
@@ -186,6 +191,29 @@ Command yang memakai aturan ini: `.addowner` `.delowner` `.blacklist add/del use
 
 > Catatan: JID **grup** (`.promogroup`, `.broadcast`) memang tetap `xxx@g.us` — grup tidak punya nomor telepon.
 
+### 🪪 Identitas: nomor WhatsApp, bukan LID
+Sebagian chat dialamatkan WhatsApp sebagai **LID** (`123456789012345@lid`) —
+identitas anonim yang **bukan nomor telepon**, dipakai di grup "sembunyikan nomor"
+dan di chat pribadi akun baru. WangBot memakai **nomor** di semua tempat
+(owner, admin, pelanggan MC, staf `.pingl`, blacklist, memori agent), dan memakai
+LID hanya sebagai *kunci pencarian* nomor:
+
+1. atribut pesan (`participant_pn` / `sender_pn`),
+2. metadata grup (`participant.jid` ↔ `participant.lid`),
+3. `OWNER_LID_MAP` di `.env`,
+4. pemetaan yang sudah dipelajari bot (tersimpan di `data/database.json` dan
+   bertahan setelah restart),
+5. identitas bot sendiri (`sock.user.lid` ↔ `sock.user.id`).
+
+Kalau nomornya benar-benar tidak diketahui, JID dibiarkan `@lid` (bot tetap
+jalan) dan dicatat supaya dilaporkan — bot **tidak pernah menebak** nomor dari
+angka LID. Data lama yang terlanjur tersimpan sebagai LID otomatis dipindahkan ke
+kunci nomor begitu pasangannya diketahui (termasuk `db.owners` saat bot menyala).
+
+Butuh tindakan? Ketik **`.id`**: bot menampilkan `Nomor kamu`, `LID kamu` beserta
+status pemetaannya, daftar owner, dan cara memperbaikinya. Dokumen lengkap:
+[`docs/IDENTITY.md`](docs/IDENTITY.md).
+
 ---
 
 ## 🗂️ Struktur Proyek
@@ -204,9 +232,10 @@ wangbot/
     ├── handler.js        # Router pesan, permission, rate-limit, AFK, FAQ
     │                     #   + metadata peserta grup untuk gerbang akses
     ├── events/groups.js  # Welcome/Goodbye/Rules otomatis
-    ├── lib/              # group-access & routing (akses grup + rute jawaban),
-    │                     # ai, assistant, persona, guardian, code-health,
-    │                     # monitor, mc, marketing, moderation, logger, dll.
+    ├── lib/              # identity (nomor WhatsApp vs LID), group-access &
+    │                     # routing (akses grup + rute jawaban), ai, assistant,
+    │                     # persona, guardian, code-health, monitor, mc,
+    │                     # marketing, moderation, logger, dll.
     └── commands/         # 101 command dalam 17 folder kategori
 ```
 
@@ -281,11 +310,26 @@ Penyebab paling umum = **session/auth kotor** (mis. setelah crash berulang, gant
 - Cek log `data/logs/` bila perlu (set `LOG_LEVEL=warn` sementara).
 
 ### "Owner: ❌ BUKAN" padahal `.env` sudah benar (LID)
-Di grup dengan fitur **"sembunyikan nomor"**, kamu muncul sebagai `@lid` (Linked Identity), bukan `@s.whatsapp.net`. WangBot sudah otomatis me-resolve `@lid` → nomor asli, jadi owner tetap cocok. Pastikan:
-- `.id` menunjukkan `Nomor kamu : 62xxxxxx` (sudah di-resolve, bukan `@lid`).
-- Owner: `✅ YA`.
+Bot mencocokkan owner lewat **nomor**. Kalau pesanmu datang sebagai `@lid`
+(Linked Identity), bot mencari nomor aslinya lebih dulu dari: atribut pesan
+(`sender_pn`/`participant_pn`), metadata grup, `OWNER_LID_MAP`, lalu pemetaan
+yang sudah dipelajari. Cek dengan `.id`:
 
-Jika tetap `@lid` di `.id`, berarti nomor asli tidak tersedia di metadata grup (jarang) → daftarkan via `.addowner` (tanpa argumen) di **private chat** bot.
+- `Nomor kamu     : 62xxxxxx` → sudah jadi nomor (owner harus `✅ YA`).
+- `LID kamu       : …@lid` + `Status nomor : ⚠️ belum diketahui` → WhatsApp tidak
+  menyertakan nomornya (jarang). Perbaiki dengan salah satu cara:
+
+  1. kirim satu pesan di **grup** yang ada botnya, lalu cek `.id` lagi;
+  2. `.addowner 081234567890` (nomor aslinya) — bot menolak menyimpan LID;
+  3. isi `.env` lalu restart:
+     ```env
+     OWNER_LID_MAP=123456789012345@lid:6281234567890
+     ```
+
+> 🔎 Angka LID **tidak pernah** dianggap nomor. Versi lama membandingkan angka
+> LID dengan angka nomor owner — itu celah: orang lain yang angka LID-nya mirip
+> bisa lolos jadi owner. Sekarang pemetaan LID → nomor harus benar-benar
+> diketahui (lihat `docs/IDENTITY.md`).
 
 > 🔐 `.addowner` sekarang **hanya bisa dipakai owner**. Pengecualian: bila bot belum punya owner sama sekali (`OWNER_NUMBER` kosong dan daftar owner di database kosong), klaim pertama diizinkan untuk bootstrap. Sebelumnya command ini terbuka untuk semua orang — siapa pun bisa menjadikan dirinya owner lalu memakai `.eval`/`.exec` (eksekusi kode di server). Lihat `AUDIT.md` poin P0.
 
@@ -296,13 +340,14 @@ Jika tetap `@lid` di `.id`, berarti nomor asli tidak tersedia di metadata grup (
 WangBot punya test yang benar-benar menjalankan kode (bukan sekadar cek sintaks):
 
 ```bash
-npm test                 # core + plumbing + Minecraft + AI + nomor + Personal Agent + akses grup
+npm test                 # core + plumbing + identitas + Minecraft + AI + nomor + Personal Agent + akses grup
 npm run test:group       # khusus gerbang akses grup: 106 assertion
 npm run test:pingl       # khusus ping keluar + netprobe: 68 assertion
 npm run test:mc          # khusus Minecraft: 70 assertion (SLP, RCON, Client API, alert, command)
 npm run test:ai          # khusus Ask AI (provider, error, command, keamanan log)
 npm run test:assistant   # persona, planner JSON, policy/approval, memori, dan scanner kode
-npm run test:target      # khusus input NOMOR: 57 assertion (addowner/delowner, warn, kick, blacklist, mcadmin, .id)
+npm run test:identity    # khusus identitas: 69 assertion (nomor vs LID, pemetaan, migrasi data lama)
+npm run test:target      # khusus input NOMOR: 61 assertion (addowner/delowner, warn, kick, blacklist, mcadmin, .id)
 npm run fake:panel       # API Pterodactyl Application tiruan di :8791 (2 node)
 npm run fake:mc          # server Minecraft tiruan (SLP + RCON)
 npm run fake:client-panel# Pterodactyl Client API tiruan (resource per server)

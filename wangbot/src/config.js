@@ -19,13 +19,64 @@ function toJid(num) {
   return n ? `${n}@s.whatsapp.net` : ''
 }
 
-function parseOwners() {
+/**
+ * Daftar owner dari .env. Owner SELALU nomor WhatsApp (@s.whatsapp.net).
+ *
+ * Entri bisa berupa:
+ *   - nomor       : `6281234567890`, `0812xxxx`, `+62 812-xxxx`
+ *   - JID nomor   : `6281234567890@s.whatsapp.net`
+ *   - JID LID     : `123456789012345@lid`  -> tidak dipakai sebagai nomor,
+ *     melainkan disimpan sebagai identitas LID eksplisit (lihat
+ *     `envOwnerLids`) supaya owner yang chat-nya dialamatkan WhatsApp sebagai
+ *     LID tetap dikenali. Ini bentuk darurat: bot akan meminta nomornya.
+ */
+function parseOwnerEntries() {
+  const pn = []
+  const lids = []
   const raw = (process.env.OWNER_NUMBER || '').trim()
+  for (const entry of raw.split(',').map((s) => s.trim()).filter(Boolean)) {
+    if (/@lid$/i.test(entry)) {
+      const n = entry.split('@')[0].replace(/[^0-9]/g, '')
+      if (n) lids.push(`${n}@lid`)
+      continue
+    }
+    const n = normalizeNumber(entry)
+    if (n) pn.push(`${n}@s.whatsapp.net`)
+  }
+  return { pn, lids }
+}
+
+/** `OWNER_LID` — daftar LID milik owner (opsional, dipisah koma). */
+function parseOwnerLids() {
+  const raw = (process.env.OWNER_LID || '').trim()
   return raw
     .split(',')
-    .map((n) => normalizeNumber(n))
+    .map((s) => s.trim())
     .filter(Boolean)
-    .map((n) => `${n}@s.whatsapp.net`)
+    .map((s) => {
+      const n = s.split('@')[0].replace(/[^0-9]/g, '')
+      return n ? `${n}@lid` : ''
+    })
+    .filter(Boolean)
+}
+
+/**
+ * `OWNER_LID_MAP` — pasangan LID:nomor yang dinyatakan admin, mis.
+ * `OWNER_LID_MAP=123456789012345@lid:6281234567890`.
+ * Dipakai kalau WhatsApp mengirim pesan owner sebagai `@lid` dan nomornya
+ * tidak muncul di metadata mana pun (jarang, tapi bikin owner tidak dikenali).
+ */
+function parseLidMap() {
+  const raw = (process.env.OWNER_LID_MAP || '').trim()
+  const out = {}
+  if (!raw) return out
+  for (const pair of raw.split(/[,\n;]+/).map((s) => s.trim()).filter(Boolean)) {
+    const [left, right] = pair.split(/[:=]/).map((s) => (s || '').trim())
+    const lid = String(left || '').split('@')[0].replace(/[^0-9]/g, '')
+    const pn = normalizeNumber(right)
+    if (lid && pn) out[`${lid}@lid`] = `${pn}@s.whatsapp.net`
+  }
+  return out
 }
 
 const config = {
@@ -90,9 +141,18 @@ const config = {
   // Kode negara untuk normalisasi nomor (default Indonesia = 62)
   countryCode: COUNTRY_CODE,
 
-  // Helper: owner dari .env (selalu re-read agar up-to-date)
+  // Helper: owner dari .env (selalu re-read agar up-to-date).
+  // `envOwners` = nomor WhatsApp (bentuk utama), `envOwnerLids` = LID yang
+  // dinyatakan eksplisit untuk owner (bentuk darurat, lihat src/lib/identity.js).
   get envOwners() {
-    return parseOwners()
+    return parseOwnerEntries().pn
+  },
+  get envOwnerLids() {
+    return [...new Set([...parseOwnerEntries().lids, ...parseOwnerLids()])]
+  },
+  // Pasangan LID -> nomor yang dinyatakan admin (OWNER_LID_MAP)
+  get lidMap() {
+    return parseLidMap()
   },
 }
 

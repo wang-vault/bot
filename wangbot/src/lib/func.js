@@ -1,26 +1,44 @@
 const { proto } = require('@whiskeysockets/baileys')
+const Identity = require('./identity')
 
 const func = {
-  /** JID owner dari .env + db */
-  owners() {
-    const config = require('../config')
+  /**
+   * Daftar owner dalam bentuk NOMOR WhatsApp.
+   * Entri `@lid` yang sudah punya pemetaan ikut dikonversi ke nomor; yang belum
+   * diketahui dipisahkan (lihat func.ownerEntries).
+   */
+  owners(db) {
     const { Database } = require('../database')
-    const db = Database.instance
-    return [...new Set([...config.envOwners, ...(db ? db.data.owners : [])])]
+    return Identity.ownerJids(db || Database.instance)
   },
 
-  /** Cek apakah jid owner */
+  /**
+   * Rincian owner: { pn, lids, unresolved } — semua berbasis nomor, dengan LID
+   * hanya sebagai kunci pencarian (src/lib/identity.js).
+   */
+  ownerEntries(db) {
+    const { Database } = require('../database')
+    return Identity.ownerEntries(db || Database.instance)
+  },
+
+  /** Daftar owner berupa nomor saja — dipakai untuk DM/notifikasi. */
+  ownerJids(db) {
+    const { Database } = require('../database')
+    return Identity.ownerJids(db || Database.instance)
+  },
+
+  /**
+   * Cek apakah jid owner. Owner SELALU nomor WhatsApp (@s.whatsapp.net).
+   *
+   * Untuk `@lid`: bot hanya percaya bila LID itu sudah dipetakan ke nomor
+   * owner, atau memang dinyatakan eksplisit sebagai identitas owner
+   * (OWNER_LID / OWNER_NUMBER berbentuk LID). Angka LID tidak pernah
+   * dibandingkan dengan angka nomor — versi lama melakukannya, dan itu bisa
+   * membuat orang lain lolos jadi owner hanya karena LID-nya mirip.
+   */
   isOwner(jid, db) {
-    const config = require('../config')
-    const owners = [...config.envOwners, ...(db.data.owners || [])]
-    if (owners.includes(jid)) return true
-    // Fallback: jika sender pakai @lid (private chat, fitur sembunyikan nomor),
-    // bandingkan bagian numeriknya saja dengan daftar owner.
-    if (jid && jid.endsWith('@lid')) {
-      const lidNum = jid.replace('@lid', '')
-      return owners.some((o) => o.replace(/@s\.whatsapp\.net|@lid/, '') === lidNum)
-    }
-    return false
+    const { Database } = require('../database')
+    return Identity.isOwnerJid(jid, db || Database.instance)
   },
 
   /** Ambil metadata grup (dengan cache singkat) */
@@ -55,15 +73,14 @@ const func = {
   },
 
   /**
-   * Resolve WhatsApp LID (@lid) -> nomor asli (@s.whatsapp.net)
-   * pakai daftar participants grup (Baileys menyediakan field jid=phone, lid=@lid).
-   * Penting untuk grup dgn fitur "sembunyikan nomor".
+   * Resolve WhatsApp LID (@lid) -> nomor asli (@s.whatsapp.net).
+   * Sumber: atribut stanza pesan, daftar participants grup (Baileys
+   * menyediakan `jid` = nomor dan `lid` = LID), pemetaan yang sudah
+   * dipelajari bot, lalu OWNER_LID_MAP dari .env.
    */
   resolveLid(jid, participants) {
-    if (!jid || !jid.endsWith('@lid') || !Array.isArray(participants)) return jid
-    const found = participants.find((p) => (p.lid && p.lid === jid) || p.id === jid)
-    if (found && found.jid && found.jid.endsWith('@s.whatsapp.net')) return found.jid
-    return jid
+    const { Database } = require('../database')
+    return Identity.resolve(jid, { db: Database.instance, participants })
   },
 
   /**
@@ -71,7 +88,7 @@ const func = {
    * 6281234@s.whatsapp.net -> 6281234 (user tidak perlu melihat JID).
    */
   num(jid) {
-    return String(jid || '').split('@')[0] || '-'
+    return jid ? Identity.num(jid) : '-'
   },
 
   /**
@@ -90,7 +107,11 @@ const func = {
     if (s.endsWith('@g.us')) return '' // JID grup, bukan orang
     if (s.includes('@')) {
       if (s.endsWith('@s.whatsapp.net')) return s // sudah JID -> tetap didukung
-      if (s.endsWith('@lid')) return s // LID: biarkan, handler yang me-resolve ke nomor
+      // LID (grup "sembunyikan nomor") dikembalikan APA ADANYA: operasi grup
+      // (kick/promote/demote) harus memakai bentuk JID sesuai alamat grupnya.
+      // Command yang MENYIMPAN identitas (owner, pelanggan MC, staf, blacklist)
+      // memakai func.pnTargets()/pnTarget() yang mengubah LID -> nomor.
+      if (s.endsWith('@lid')) return s
       const head = s.split('@')[0].replace(/[^0-9]/g, '')
       return head.length >= 8 ? toJid(head) : ''
     }
@@ -163,6 +184,43 @@ const func = {
   /** Target pertama saja (untuk command yang hanya butuh satu orang). */
   target(m, argText, opts = {}) {
     return func.targets(m, argText, opts)[0] || ''
+  },
+
+  /**
+   * Ubah satu JID (boleh @lid) jadi NOMOR WhatsApp. '' kalau nomornya belum
+   * diketahui bot. `m` dipakai untuk konteks pemetaan (atribut pesan,
+   * metadata grup, pemetaan yang sudah dipelajari).
+   */
+  jidToPn(m, jid) {
+    const b = Identity.bare(jid)
+    if (Identity.isPn(b)) return b
+    if (!Identity.isLid(b)) return ''
+    const resolved = Identity.resolve(b, {
+      db: m && m.db,
+      key: m && m.raw && m.raw.key,
+      participants: m && m.__participants,
+      sock: m && m.sock,
+    })
+    return Identity.isPn(resolved) ? resolved : ''
+  },
+
+  /**
+   * Seperti targets(), tapi hasilnya WAJIB nomor (@s.whatsapp.net).
+   * Dipakai command yang menyimpan identitas (owner, pelanggan MC, blacklist)
+   * supaya tidak ada LID yang tersimpan sebagai "nomor".
+   */
+  pnTargets(m, argText, opts = {}) {
+    const out = []
+    for (const jid of func.targets(m, argText, opts)) {
+      const pn = func.jidToPn(m, jid)
+      if (pn && !out.includes(pn)) out.push(pn)
+    }
+    return out
+  },
+
+  /** Satu target nomor saja ('' kalau tidak ada / belum diketahui). */
+  pnTarget(m, argText, opts = {}) {
+    return func.pnTargets(m, argText, opts)[0] || ''
   },
 
   /** Format runtime */

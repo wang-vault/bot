@@ -53,7 +53,9 @@ Role dihitung dari metadata grup: `owner` = nomor ada di daftar owner,
 `admin` = `admin`/`superadmin` grup, `member` = peserta biasa, dan
 `guest` = pengirim yang tidak ada di daftar peserta (ditolak kecuali batas `all`).
 Nomor owner yang tampil sebagai `@lid` (grup dengan "sembunyikan nomor") tetap
- dikenali karena handler me-resolve-nya lebih dulu.
+dikenali: handler mencari **nomor aslinya** lebih dulu (atribut pesan, metadata
+grup, `OWNER_LID_MAP`, atau pemetaan yang sudah dipelajari bot) — lihat
+[`IDENTITY.md`](IDENTITY.md). Angka LID tidak pernah dipakai sebagai nomor.
 
 ## 3. Seberapa jauh agent boleh bertindak di grup
 

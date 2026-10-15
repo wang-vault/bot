@@ -20,6 +20,20 @@ require('./src/database').Database.instance = db
 const loader = loadCommands()
 logger.info(`Loaded ${loader.commands.length} command dari ${new Set(loader.commands.map((c) => c.category)).size} kategori`)
 
+// ---------- Identitas: owner & pengguna memakai NOMOR WhatsApp ----------
+// WhatsApp kadang mengalamatkan chat sebagai `@lid` (Linked ID). Bot hanya
+// memakai LID sebagai kunci pencarian nomor (src/lib/identity.js); data lama
+// yang terlanjur tersimpan sebagai LID dirapikan di sini.
+{
+  const Identity = require('./src/lib/identity')
+  const fix = Identity.canonicalizeOwners(db)
+  if (fix.moved) logger.info(`Identitas: ${fix.moved} entri owner berbentuk LID dipetakan ke nomor WhatsApp.`)
+  if (fix.unresolved.length) {
+    logger.warn(`Owner masih berbentuk LID (nomornya belum diketahui): ${fix.unresolved.join(', ')}`)
+    logger.warn('Perbaiki dengan .addowner <nomor> atau isi OWNER_LID_MAP=<lid>:<nomor> di .env lalu restart.')
+  }
+}
+
 // ---------- Apply runtime overrides (prefix, dll) ----------
 if (db.data.runtime && db.data.runtime.prefix) {
   config.prefix = db.data.runtime.prefix
@@ -75,7 +89,10 @@ function onReady(sock) {
 
 async function main() {
   logger.info(`Memulai ${config.botName}...`)
-  logger.info(`Prefix: "${config.prefix}" | Owner env: ${config.envOwners.length} nomor`)
+  logger.info(
+    `Prefix: "${config.prefix}" | Owner env: ${config.envOwners.length} nomor` +
+      (config.envOwnerLids.length ? ` + ${config.envOwnerLids.length} LID (bentuk darurat)` : '')
+  )
 
   await startWhatsApp(
     async (sock, M) => handle(sock, db, loader, M),

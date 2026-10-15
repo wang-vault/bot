@@ -112,6 +112,32 @@ async function main() {
     ok(`jidFromInput(${JSON.stringify(input)})`, got === want, `-> ${JSON.stringify(got)} (ingin ${JSON.stringify(want)})`)
   }
   ok('num() menampilkan nomor, bukan JID', func.num('6281234567890@s.whatsapp.net') === '6281234567890')
+
+  // Identitas yang DISIMPAN selalu nomor: pnTargets() mengubah @lid menjadi
+  // nomor lewat metadata grup, dan menolak LID yang nomornya belum diketahui.
+  const LID_MEMBER = '123456789012345@lid'
+  const LID_PN = '628999888777@s.whatsapp.net'
+  const mLike = (participants) => ({
+    args: '',
+    mentionedJid: [LID_MEMBER],
+    quoted: null,
+    db,
+    sock: {},
+    __participants: participants,
+  })
+  ok('pnTargets(): tag @lid -> NOMOR (dari metadata grup)',
+    JSON.stringify(func.pnTargets(mLike([{ id: LID_MEMBER, jid: LID_PN, lid: LID_MEMBER }]))) === JSON.stringify([LID_PN]),
+    `-> ${JSON.stringify(func.pnTargets(mLike([{ id: LID_MEMBER, jid: LID_PN, lid: LID_MEMBER }])))}`)
+  // (pemetaan LID_MEMBER di atas sudah dipelajari bot, jadi LID itu memang tetap
+  //  bisa -> pakai LID yang benar-benar belum pernah terlihat untuk uji negatif)
+  const LID_ASING = '999000111222333@lid'
+  const mAsing = { args: '', mentionedJid: [LID_ASING], quoted: null, db, sock: {}, __participants: [] }
+  ok('pnTargets(): LID tanpa nomor ditolak (tidak disimpan sebagai identitas)',
+    func.pnTargets(mAsing).length === 0, `-> ${JSON.stringify(func.pnTargets(mAsing))}`)
+  ok('jidToPn(): nomor apa adanya, LID belum dikenal -> kosong',
+    func.jidToPn(mAsing, LID_PN) === LID_PN && func.jidToPn(mAsing, LID_ASING) === '')
+  ok('pnTargets(): LID yang sudah dipelajari tetap jadi NOMOR',
+    JSON.stringify(func.pnTargets(mLike([]))) === JSON.stringify([LID_PN]))
   ok('targets() bisa banyak nomor sekaligus', JSON.stringify(func.targets({ args: '081234567890, 0813-1111-2222', mentionedJid: [], quoted: null })) ===
     JSON.stringify(['6281234567890@s.whatsapp.net', '6281311112222@s.whatsapp.net']))
   ok('targets(firstOnly) berhenti di nomor pertama', JSON.stringify(func.targets({ args: '081234567890 spam 5 kali', mentionedJid: [], quoted: null }, undefined, { firstOnly: true })) ===

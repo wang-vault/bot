@@ -107,14 +107,19 @@ function routeFor(route, topic) {
   return TOPICS.includes(topic) ? topic : 'public'
 }
 
+// Owner selalu nomor WhatsApp: entri LID dipetakan lebih dulu (src/lib/identity.js).
 function ownerJids(db) {
   try {
     return require('./guardian').ownerJids(db)
   } catch (_) {
-    const config = require('../config')
-    return [...new Set([...(config.envOwners || []), ...((db && db.data && db.data.owners) || [])])].filter((j) =>
-      String(j).endsWith('@s.whatsapp.net')
-    )
+    try {
+      return require('./identity').ownerJids(db)
+    } catch (_) {
+      const config = require('../config')
+      return [...new Set([...(config.envOwners || []), ...((db && db.data && db.data.owners) || [])])].filter((j) =>
+        String(j).endsWith('@s.whatsapp.net')
+      )
+    }
   }
 }
 
