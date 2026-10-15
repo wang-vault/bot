@@ -309,6 +309,14 @@ Penyebab paling umum = **session/auth kotor** (mis. setelah crash berulang, gant
 - DM bot `.ping`. Kalau balas → sehat.
 - Cek log `data/logs/` bila perlu (set `LOG_LEVEL=warn` sementara).
 
+### Error `SessionError: Over 2000 messages into the future!` / `Failed to decrypt message with any known session...`
+Error ini berasal dari `libsignal` saat rantai kunci satu kontak/LID (mis. `session-158184383758357.0.json`) tertinggal >2.000 pesan atau sesinya tidak lagi sinkron. Sekarang ditangani otomatis oleh `src/lib/signal-session.js`:
+
+- `fillMessageKeys` diubah menjadi iteratif (bukan rekursif) hingga `25.000` langkah dan hanya menyimpan maksimal `400` message key terakhir agar file `session-*.json` tidak membengkak.
+- `decryptWithSessions` memulihkan snapshot sesi bila percobaan dekripsi gagal (mencegah mutasi in-place merusak sesi terbuka) serta menghentikan banjir stack trace `console.error` ke log PM2.
+- Bila seluruh sesi untuk satu alamat benar-benar gagal didekripsi (`Bad MAC`, `No matching sessions`, dsb.), file `session-<addr>.json` atau `sender-key` terkait otomatis dihapus agar negosiasi ulang (`pkmsg`) langsung membuat sesi baru tanpa perlu menghapus seluruh `data/auth` (tanpa scan QR ulang).
+- Saat startup, `sanitizeAuthFolder` otomatis memangkas sesi tertutup lama dan menghapus file `session-*.json` yang korup tanpa menyentuh `creds.json`.
+
 ### "Owner: ❌ BUKAN" padahal `.env` sudah benar (LID)
 Bot mencocokkan owner lewat **nomor**. Kalau pesanmu datang sebagai `@lid`
 (Linked Identity), bot mencari nomor aslinya lebih dulu dari: atribut pesan

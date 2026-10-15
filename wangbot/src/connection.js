@@ -5,6 +5,7 @@ const {
   fetchLatestBaileysVersion,
 } = require('@whiskeysockets/baileys')
 const { Boom } = require('@hapi/boom')
+const NodeCache = require('node-cache')
 const P = require('pino')
 const qrcode = require('qrcode-terminal')
 const fs = require('fs')
@@ -12,8 +13,17 @@ const path = require('path')
 
 const config = require('./config')
 const logger = require('./lib/logger')
+const SignalSession = require('./lib/signal-session')
+
+// Pasang patch pengaman libsignal sejak modul dimuat
+SignalSession.patchLibsignal()
 
 let sockGlobal = null
+let reconnectTimer = null
+
+// Cache retry pesan lintas reconnect (TTL 1 jam) & pencegah loop PDO 5 detik
+const msgRetryCounterCache = new NodeCache({ stdTTL: 3600, checkperiod: 120, useClones: false })
+const placeholderResendCache = SignalSession.createNoOpPlaceholderCache()
 
 // ---------------------------------------------------------------------------
 // Cache pesan sederhana (pengganti makeInMemoryStore agar tetap kompatibel
@@ -41,8 +51,20 @@ function getCachedMessage(key) {
  * @param {function} onReady(sock)
  */
 async function startWhatsApp(onMessage, onParticipants, onReady) {
-  const { state, saveCreds } = await useMultiFileAuthState(path.resolve(config.authPath))
-  fs.mkdirSync(path.resolve(config.authPath), { recursive: true })
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+  const authDir = path.resolve(config.authPath)
+  fs.mkdirSync(authDir, { recursive: true })
+  const cleanStats = SignalSession.sanitizeAuthFolder(authDir)
+  if (cleanStats.cleaned || cleanStats.removed) {
+    logger.info(
+      `[SIGNAL] Sanitasi auth: ${cleanStats.cleaned} sesi dirapikan, ${cleanStats.removed} sesi rusak dihapus ` +
+        `(${cleanStats.prunedClosed} sesi tertutup lama & ${cleanStats.prunedKeys} messageKey dipangkas).`
+    )
+  }
+  const { state, saveCreds } = await useMultiFileAuthState(authDir)
 
   let version
   if (config.waVersion) {
@@ -67,6 +89,14 @@ async function startWhatsApp(onMessage, onParticipants, onReady) {
     browser: ['WangBot', 'Chrome', '1.0.0'],
     markOnlineOnConnect: false,
     getMessage: async (key) => getCachedMessage(key),
+    cachedGroupMetadata: async (jid) => {
+      const meta = sockGlobal && sockGlobal.store && sockGlobal.store.groupMetadata.get(jid)
+      return meta && Array.isArray(meta.participants) ? meta : undefined
+    },
+    msgRetryCounterCache,
+    placeholderResendCache,
+    makeSignalRepository: (auth) =>
+      SignalSession.createSelfHealingSignalRepository(auth, { logger }),
     defaultQueryTimeoutMs: 60000,
   })
 
@@ -114,7 +144,12 @@ async function startWhatsApp(onMessage, onParticipants, onReady) {
       const shouldReconnect = code !== DisconnectReason.loggedOut
       logger.warn(`Koneksi tertutup. Code: ${code}. Reconnect: ${shouldReconnect}`)
       if (shouldReconnect) {
-        setTimeout(() => startWhatsApp(onMessage, onParticipants, onReady), 3000)
+        if (!reconnectTimer) {
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null
+            startWhatsApp(onMessage, onParticipants, onReady)
+          }, 3000)
+        }
       } else {
         logger.error('Akun logout. Hapus folder auth untuk login ulang.')
       }
