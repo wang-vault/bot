@@ -1,5 +1,6 @@
 const NetProbe = require('../../lib/netprobe')
 const config = require('../../config')
+const Identity = require('../../lib/identity')
 const logger = require('../../lib/logger')
 
 // Ping ke alamat LUAR (IP/domain pelanggan/internet), bukan latency bot (.ping)
@@ -25,7 +26,12 @@ function envStaff() {
     .split(',')
     .map((x) => x.trim())
     .filter(Boolean)
-    .map((x) => config.toJid(x))
+    .map((x) => {
+      // Identitas staf = NOMOR WhatsApp. Entri `@lid` di .env tetap dibiarkan
+      // sebagai LID (jangan dinormalkan jadi nomor palsu), lihat lib/identity.js.
+      if (/@lid$/i.test(x)) return Identity.bare(x)
+      return config.toJid(x)
+    })
     .filter(Boolean)
 }
 
@@ -36,7 +42,9 @@ function allowed(m, db) {
   if (m.agentAuthorized) return true
   const s = store(db)
   const list = [...envStaff(), ...((s && s.staff) || [])]
-  return list.includes(m.sender)
+  // m.sender sudah berupa NOMOR; `m.lid` ikut dicek supaya entri staf lama
+  // yang masih tersimpan sebagai LID tidak langsung kehilangan hak.
+  return list.some((jid) => jid === m.sender || (m.lid && jid === m.lid))
 }
 
 module.exports = {
@@ -118,23 +126,33 @@ function staffCommand(m, s, P) {
     if (!rows.length) return m.reply(`Belum ada staf. Tambah: \`${P}pingl staff add 0812xxxx\``)
     return m.reply(
       `👤 *STAF PING* (${rows.length}) — boleh memakai \`${P}pingl\`\n` +
-        rows.map((j) => `• ${String(j).split('@')[0]}${env.includes(j) ? ' (dari .env)' : ''}`).join('\n')
+        rows.map((j) => `• ${Identity.label(j)}${env.includes(j) ? ' (dari .env)' : ''}`).join('\n')
     )
   }
-  const jid = m.func && typeof m.func.jidFromInput === 'function' ? m.func.jidFromInput(parts.slice(2).join(' ')) : ''
+  const typed = parts.slice(2).join(' ')
+  // Staf disimpan sebagai NOMOR (utamakan pnTarget; jatuh ke input apa adanya
+  // bila nomornya belum diketahui, supaya pendaftaran tidak gagal total).
+  const jid =
+    (m.func && typeof m.func.pnTarget === 'function' && m.func.pnTarget(m, typed)) ||
+    (m.func && typeof m.func.jidFromInput === 'function' ? m.func.jidFromInput(typed) : '')
   if (!jid) return m.reply(`Contoh: \`${P}pingl staff ${act} 081234567890\``)
+  const lidNote = Identity.isLid(jid)
+    ? `\n⚠️ Nomor aslinya belum diketahui bot, jadi yang tersimpan masih identitas *LID*.\n` +
+      `Tulis nomornya (mis. 081234567890) agar cocok dengan identitas yang dipakai bot.`
+    : ''
   if (act === 'add' || act === 'tambah') {
-    if (s.staff.includes(jid)) return m.reply(`ℹ️ ${jid.split('@')[0]} sudah ada di daftar staf.`)
+    if (s.staff.includes(jid)) return m.reply(`ℹ️ ${Identity.num(jid)} sudah ada di daftar staf.`)
     s.staff.push(jid)
     m.db.save()
-    return m.reply(`✅ ${jid.split('@')[0]} sekarang staf — boleh memakai \`${P}pingl\`.`)
+    return m.reply(`✅ ${Identity.num(jid)} sekarang staf — boleh memakai \`${P}pingl\`.${lidNote}`)
   }
   if (act === 'del' || act === 'hapus' || act === 'remove') {
-    const i = s.staff.indexOf(jid)
-    if (i < 0) return m.reply(`ℹ️ ${jid.split('@')[0]} bukan staf yang didaftarkan lewat command (cek .env PINGL_STAFF).`)
-    s.staff.splice(i, 1)
+    let i = s.staff.indexOf(jid)
+    if (i < 0 && Identity.isPn(jid)) i = s.staff.indexOf(Identity.lidFor(m.db, jid))
+    if (i < 0) return m.reply(`ℹ️ ${Identity.num(jid)} bukan staf yang didaftarkan lewat command (cek .env PINGL_STAFF).`)
+    const gone = s.staff.splice(i, 1)[0]
     m.db.save()
-    return m.reply(`🧹 ${jid.split('@')[0]} tidak lagi menjadi staf.`)
+    return m.reply(`🧹 ${Identity.num(gone)} tidak lagi menjadi staf.`)
   }
   return m.reply(`Pilihan: \`list\`, \`add <nomor>\`, \`del <nomor>\`.`)
 }

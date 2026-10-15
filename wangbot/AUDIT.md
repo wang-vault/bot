@@ -180,7 +180,55 @@ setelah `invalidateMeta()` → `true`.
 
 ### ✅ Yang teruji benar (tidak perlu diubah)
 * Resolusi **LID**: pengirim `@lid` di grup "sembunyikan nomor" di-resolve ke nomor asli, dan
-  **owner maupun admin tetap dikenali** setelah resolusi.
+  **owner maupun admin tetap dikenali** setelah resolusi. (Diperluas pada Putaran 3 di bawah.)
+
+---
+
+## 🟠 Putaran 3 — Identitas: owner memakai NOMOR, bukan LID (sudah diperbaiki)
+
+### 23. Owner lolos hanya karena **angka LID** mirip nomor owner (celah keamanan)
+`func.isOwner()` punya "fallback": kalau pengirim ber-`@lid`, bagian angkanya dibandingkan
+dengan bagian angka daftar owner. Artinya siapa pun yang angka LID-nya kebetulan sama
+dengan nomor owner dikenali sebagai owner — dan owner bisa memakai `.eval`/`.exec`.
+
+Bukti: `isOwner('6281234567890@lid')` → `true` meski nomor owner
+`6281234567890@s.whatsapp.net` tidak punya pemetaan apa pun ke LID itu.
+
+**Perbaikan**: angka LID tidak pernah dibandingkan sebagai nomor. Identitas owner selalu
+nomor; `@lid` hanya dipakai sebagai kunci pencarian nomor (lihat #24). LID tetap boleh
+dinyatakan eksplisit oleh admin (`OWNER_LID` / `OWNER_LID_MAP`) dan entri LID lama di
+`db.owners` tetap dihormati sampai nomornya diketahui, tapi tidak ada lagi tebak-tebakan angka.
+
+### 24. Owner/klien tidak dikenali saat WhatsApp mengirim `@lid` (fungsional)
+Chat pribadi dan grup "sembunyikan nomor" bisa datang sebagai `@lid`. Resolusi lama hanya
+melihat metadata grup, jadi: owner tidak dikenali di chat pribadi, entri `mc.entries` /
+`mc.servers[].ownerJid` terbelah dua (`@lid` vs nomor), dan alert gagal terkirim.
+
+**Perbaikan**: modul baru `src/lib/identity.js` memetakan LID → nomor dari enam sumber
+(atribut stanza `participant_pn`/`sender_pn` → metadata grup → `OWNER_LID_MAP` →
+pemetaan tersimpan → identitas bot sendiri → `signalRepository` Baileys baru), menyimpan
+hasilnya di `db.identity.lidToPn`, dan memigrasikan data lama yang berkunci LID
+(`owners`, `users`, `afk`, `blacklist.users`, `pingl.staff`, `minecraft.entries`,
+`minecraft.servers[].ownerJid/addedBy`, `assistant.pending[].requestedBy`,
+`groupAccess.requests`). Saat boot, `index.js` menjalankan
+`Identity.canonicalizeOwners(db)` dan melaporkan entri LID yang belum punya nomor.
+
+Kalau nomor benar-benar tidak diketahui: JID dibiarkan `@lid` (bot tetap jalan), dicatat di
+`db.identity.pending`, dan `.id`/`.addowner` meminta nomornya — bukan menyimpan LID sebagai owner.
+Dokumentasi: `docs/IDENTITY.md`.
+
+### 25. Data pelanggan MC & staf `.pingl` menyimpan LID sebagai "nomor"
+`mcadmin add`, `mclink`/`mcwatch`, dan `.pingl staff add` menyimpan identitas apa adanya.
+Setelah #24, semua input orang dinormalkan ke nomor lebih dulu
+(`m.func.pnTargets()` / `pnTarget()`); kalau belum bisa, command memberi tahu bahwa
+nomornya perlu ditulis (bukan diam-diam menyimpan LID).
+
+### ✅ Yang teruji setelah Putaran 3
+* `npm test` → 9 suite, semuanya lulus: core 21, plumbing 24, **identitas 69**, Minecraft 70,
+  AI 98, nomor 61, Personal Agent 50, akses grup 106, ping luar 68.
+* Regresi khusus: `LID ber-angka sama dengan nomor owner TIDAK dianggap owner`
+  (`test/plumbing.test.js`), `LID dengan angka mirip NOMOR OWNER tidak jadi owner`
+  (`test/identity.test.js`).
 * Anti spam, anti link + whitelist, warn → autokick + reset warning, welcome/goodbye + placeholder
   `@user`/`@subject`, persistensi prefix lintas restart.
 
@@ -204,8 +252,9 @@ setelah `invalidateMeta()` → `true`.
 ```bash
 cd wangbot
 npm install                 # (lihat D1 bila gagal di sharp)
-npm test                    # core (21 assertion, 24 bila FAKE_PANEL diisi) + plumbing (21 assertion)
+npm test                    # core (21 assertion, 24 bila FAKE_PANEL diisi) + plumbing (24) + identitas (69) + lainnya
 npm run test:plumbing       # khusus lapisan database/handler/parser
+npm run test:identity       # khusus identitas: nomor WhatsApp vs LID (69 assertion)
 npm run test:dryrun         # jalankan 82 command lewat handler asli, lapor error/balasan
 npm run fake:panel          # API Pterodactyl tiruan di :8791 untuk uji monitoring
 FAKE_PANEL=http://127.0.0.1:8791 FAKE_WEBSITE=http://127.0.0.1:8791 npm test
@@ -238,7 +287,23 @@ src/commands/owner/exec.js             (#16)
 src/commands/owner/gitpull.js          (#16)
 src/database.js                        (#19 data korup + tulis atomik)
 src/lib/message.js                     (#20 documentWithCaptionMessage)
-src/handler.js                         (#21 leak rate-limit, #22 invalidateMeta)
+src/handler.js                         (#21 leak rate-limit, #22 invalidateMeta, #23 #24 identitas)
+src/lib/identity.js                    (#23 #24 modul baru: LID -> nomor, migrasi data)
+src/config.js                          (#23 #24 OWNER_LID / OWNER_LID_MAP, envOwners = nomor)
+src/database.js                        (#24 blok identity + addOwner/delOwner/isOwner berbasis nomor)
+src/lib/func.js                        (#23 #24 isOwner tanpa tebak angka, pnTargets/pnTarget/jidToPn)
+src/commands/owner/addowner.js         (#23 #24 tolak LID, minta nomor)
+src/commands/owner/delowner.js         (#24 input nomor)
+src/commands/utility/id.js             (#24 tampilkan nomor + status LID + cara perbaiki)
+src/commands/utility/owner.js          (#24 daftar owner = nomor)
+src/commands/moderation/blacklist.js   (#24 simpan nomor bila diketahui)
+src/commands/mc/mcadmin.js             (#25 pelanggan MC pakai nomor)
+src/commands/monitoring/pingl.js       (#25 staf pakai nomor via jidFromInput)
+src/commands/cs/feedback.js, laporan.js (#24 notifikasi owner ke nomor)
+src/lib/guardian.js, monitor.js, mc.js (#24 target DM/alert = nomor owner)
+src/lib/code-health.js                 (#24 laporan owner-lid-unresolved)
+index.js                               (#24 canonicalizeOwners saat boot)
+test/identity.test.js                  (#23 #24 suite baru, 69 assertion)
 src/events/groups.js                   (#22 batalkan cache saat anggota berubah)
 package.json                           (script test)
 test/core.test.js, test/plumbing.test.js, test/dryrun.js, test/fake-panel.js   (baru)

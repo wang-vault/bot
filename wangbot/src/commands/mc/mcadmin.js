@@ -1,5 +1,6 @@
 const Mc = require('../../lib/mc')
 const config = require('../../config')
+const Identity = require('../../lib/identity')
 
 // Panel kontrol untuk owner WangStore: lihat semua server pelanggan, tambahkan
 // server secara manual (mis. server di luar panel / butuh alamat khusus),
@@ -10,7 +11,7 @@ module.exports = {
   category: 'mc',
   isOwner: true,
   desc: 'Kelola semua server Minecraft pelanggan (Owner).',
-  use: 'list | add <ownerJid> <nama> <host> <port> | sethost <id> <host> <port> | monitor <id> <on|off> | rm <id>',
+  use: 'list | add <nomor|JID pelanggan> <nama> <host> <port> | sethost <id> <host> <port> | monitor <id> <on|off> | rm <id>',
   run: async (m) => {
     const [sub, ...rest] = m.args.trim().split(/\s+/).filter(Boolean)
     const all = Mc.allServers(m.db)
@@ -36,11 +37,17 @@ module.exports = {
       if (!ownerRaw || !name || !host) {
         return m.reply(`Contoh: \`${P}mcadmin add 081234567890 Survival play.wangstore.id 25565\``)
       }
-      // Nomor pelanggan dinormalkan (0812.. -> 62812..), JID penuh tetap diterima.
+      // Pelanggan diidentifikasi pakai NOMOR WhatsApp (0812.. -> 62812..).
+      // Kalau yang diketik sebuah `@lid`, bot berusaha mengubahnya ke nomor
+      // asli dulu (src/lib/identity.js) supaya alert bisa dikirim ke DM-nya.
       const ownerJid = m.func.jidFromInput(ownerRaw)
       if (!ownerJid) {
         return m.reply(`❌ "${ownerRaw}" bukan nomor yang bisa dipakai. Contoh: \`${P}mcadmin add 081234567890 Survival play.wangstore.id 25565\``)
       }
+      const lidNote = Identity.isLid(ownerJid)
+        ? `\n⚠️ Datanya masih identitas *LID* (nomornya belum diketahui bot).\n` +
+          `Tulis nomor pelanggannya (mis. 081234567890) agar alert/monitoring sampai ke DM-nya.`
+        : ''
       const id = 'manual-' + Date.now().toString(36)
       Mc.setEntry(m.db, ownerJid, {})
       const reg = Mc.registerServer(
@@ -51,7 +58,7 @@ module.exports = {
       )
       if (reg.error) return m.reply('❌ ' + reg.error)
       return m.reply(
-        `✅ Server *${name}* didaftarkan untuk ${Mc.num(ownerJid)}.\nAlamat: ${host}:${port}\nPemantauan: aktif (tanpa data resource panel).`
+        `✅ Server *${name}* didaftarkan untuk ${Mc.num(ownerJid)}.\nAlamat: ${host}:${port}\nPemantauan: aktif (tanpa data resource panel).${lidNote}`
       )
     }
 

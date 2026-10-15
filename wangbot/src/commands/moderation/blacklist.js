@@ -18,7 +18,9 @@ module.exports = {
 
     if (action === 'add') {
       if (type === 'user') {
-        const target = m.func.target(m, rest.join(' '))
+        // Utamakan NOMOR (identitas utama bot); LID cuma dipakai kalau nomornya
+        // belum diketahui — tanpa ini blacklist bisa meleset saat LID dipetakan.
+        const target = m.func.pnTarget(m, rest.join(' ')) || m.func.target(m, rest.join(' '))
         if (!target) return m.reply('Contoh: ' + m.config.prefix + 'blacklist add user 081234567890\nAtau reply / tag user-nya.')
         if (m.func.isOwner(target, m.db)) return m.reply('⚠️ Tidak bisa blacklist owner.')
         if (!bl.users.includes(target)) {
@@ -39,9 +41,11 @@ module.exports = {
 
     if (action === 'del') {
       if (type === 'user') {
-        const target = m.func.target(m, rest.join(' '))
+        const raw = m.func.target(m, rest.join(' '))
+        const target = m.func.pnTarget(m, rest.join(' ')) || raw
         if (!target) return m.reply('Contoh: ' + m.config.prefix + 'blacklist del user 081234567890')
-        const i = bl.users.indexOf(target)
+        let i = bl.users.indexOf(target)
+        if (i < 0 && raw && raw !== target) i = bl.users.indexOf(raw)
         if (i < 0) return m.reply('ℹ️ ' + m.func.num(target) + ' tidak ada di blacklist.')
         bl.users.splice(i, 1)
         m.db.save()

@@ -103,7 +103,7 @@ async function main() {
   ok('documentWithCaptionMessage: dokumen + caption', getBody(doc) === '.restore' && getMediaType(doc).type === 'document')
 
   // ---------------------------------------------------------------- [E]
-  console.log('\n[E] HANDLER: LID + admin di grup "sembunyikan nomor"')
+  console.log('\n[E] HANDLER: LID + admin di grup "sembunyikan nomor" (identitas = NOMOR)')
   cleanDb()
   const dbE = new Database(dbPath)
   const LID = '123456789@lid'
@@ -129,6 +129,30 @@ async function main() {
     message: { conversation: '.ping' },
   }, dbE, emptyLoader)
   ok('owner dikenali meski mengirim sebagai @lid', mo.isOwner === true, `-> sender=${mo.sender} isOwner=${mo.isOwner}`)
+
+  // Angka LID yang kebetulan sama dengan nomor owner TIDAK boleh lolos.
+  // (Versi lama membandingkan angka LID dengan angka nomor owner.)
+  const GROUP_LID3 = '999000555-666@g.us'
+  const LID_SAMA = '6281234567890@lid'
+  const sockL = makeSock([{ id: LID_SAMA, jid: LID_SAMA, lid: LID_SAMA, admin: null }])
+  const ml = await buildM(sockL, {
+    key: { remoteJid: GROUP_LID3, fromMe: false, participant: LID_SAMA, id: 'L3' },
+    message: { conversation: '.ping' },
+    pushName: 'Bukan Owner',
+  }, dbE, emptyLoader)
+  ok('LID ber-angka sama dengan nomor owner TIDAK dianggap owner',
+    ml.isOwner === false && ml.sender === LID_SAMA, `-> sender=${ml.sender} isOwner=${ml.isOwner}`)
+  ok('LID yang nomornya belum diketahui dicatat untuk owner',
+    !!require(path.join(BOT, 'src/lib/identity')).pendingFor(dbE, LID_SAMA))
+
+  // Chat pribadi yang dialamatkan LID: nomor diambil dari atribut sender_pn
+  const mPriv = await buildM(makeSock(), {
+    key: { remoteJid: '888000111222333@lid', fromMe: false, id: 'L4', senderLid: '888000111222333@lid', senderPn: OWNER },
+    message: { conversation: '.ping' },
+    pushName: 'Owner',
+  }, dbE, emptyLoader)
+  ok('chat pribadi ber-LID: sender jadi NOMOR (sender_pn)', mPriv.sender === OWNER && mPriv.isOwner === true,
+    `-> ${mPriv.sender} isOwner=${mPriv.isOwner}`)
 
   // ---------------------------------------------------------------- [F]
   console.log('\n[F] HANDLER: cache metadata dibatalkan saat anggota berubah')

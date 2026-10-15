@@ -15,7 +15,8 @@ module.exports = {
     m.db.data.reports.push(entry)
     m.db.save()
     await m.reply('🚨 Laporan kamu tercatat. Tim kami akan segera menindaklanjuti. Terima kasih.')
-    const owners = [...new Set([...m.config.envOwners, ...(m.db.data.owners || [])])]
+    // Owner selalu nomor WhatsApp (@s.whatsapp.net) — LID dipetakan dulu
+    const owners = m.func.ownerJids(m.db)
     for (const owner of owners) {
       try {
         await m.sock.sendMessage(owner, {

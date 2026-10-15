@@ -3,6 +3,7 @@ const func = require('./lib/func')
 const config = require('./config')
 const logger = require('./lib/logger')
 const moderation = require('./lib/moderation')
+const Identity = require('./lib/identity')
 const Assistant = require('./lib/assistant')
 const NodeCache = require('node-cache')
 
@@ -128,10 +129,15 @@ async function buildM(sock, M, db, loader) {
     }
   }
 
-  // ====== LID resolution + permission (dihitung setelah metadata grup) ======
+  // ====== IDENTITAS (nomor WhatsApp) + ADMIN ======
+  // WhatsApp kadang mengalamatkan pengirim sebagai `@lid` (grup "sembunyikan
+  // nomor" maupun chat pribadi). Bot SELALU berusaha mengubahnya jadi nomor
+  // asli (src/lib/identity.js) — owner, admin, data pelanggan MC, memori
+  // agent, dan log semuanya memakai nomor, bukan LID.
   m.isAdmin = false
   m.isBotAdmin = false
   m.groupName = ''
+  m.lid = '' // LID mentah pengirim (kalau ada) — cuma untuk debugging
   // Daftar peserta ikut disimpan supaya lapisan lain (GroupAccess / Routing)
   // tidak perlu memanggil groupMetadata dua kali untuk satu pesan.
   m.__participants = []
@@ -139,28 +145,52 @@ async function buildM(sock, M, db, loader) {
   if (m.isGroup) {
     const meta = await m.getMeta()
     m.groupName = meta?.subject || ''
-    const participants = meta && Array.isArray(meta.participants) ? meta.participants : []
-    m.__participants = participants
+    m.__participants = meta && Array.isArray(meta.participants) ? meta.participants : []
+  }
+
+  if (Identity.isLid(m.sender)) {
+    m.lid = Identity.bare(m.sender)
+    const pn = await Identity.resolveAsync(m.sender, {
+      db,
+      key: M.key,
+      participants: m.__participants,
+      sock,
+    })
+    if (Identity.isPn(pn)) m.sender = pn
+    else Identity.notePending(db, m.lid, m.pushName) // nomornya belum diketahui
+  }
+  if (m.quoted && Identity.isLid(m.quoted.sender)) {
+    const pn = await Identity.resolveAsync(m.quoted.sender, {
+      db,
+      key: M.key,
+      participants: m.__participants,
+      sock,
+    })
+    if (Identity.isPn(pn)) m.quoted.sender = pn
+  }
+
+  if (m.isGroup) {
+    const participants = m.__participants
+    // Semua bentuk JID admin (nomor maupun LID) supaya status admin tetap
+    // terbaca walau grup memakai alamat LID.
+    const adminIds = []
+    for (const p of participants) {
+      if (!p || (p.admin !== 'admin' && p.admin !== 'superadmin')) continue
+      for (const id of [p.jid, p.id, p.lid]) {
+        const b = Identity.bare(id)
+        if (b && !adminIds.includes(b)) adminIds.push(b)
+      }
+    }
+    // Dipakai Routing untuk DM admin: utamakan NOMOR (LID bukan tujuan DM yang
+    // bisa diandalkan), jatuh ke JID apa adanya kalau nomornya tak diketahui.
     m.__admins = participants
       .filter((p) => p && (p.admin === 'admin' || p.admin === 'superadmin'))
-      .map((p) => p.jid || p.id)
+      .map((p) => Identity.pnOfParticipant(p, { db, participants }) || Identity.bare(p.jid || p.id))
       .filter(Boolean)
-    // WhatsApp LID (Linked Identity): di grup dgn fitur "sembunyikan nomor",
-    // pesan datang dgn participant @lid. Resolve ke nomor asli @s.whatsapp.net
-    // supaya owner/admin check cocok dgn daftar berbasis nomor telepon.
-    if (m.sender && m.sender.endsWith('@lid')) {
-      m.sender = func.resolveLid(m.sender, participants)
-    }
-    if (m.quoted && m.quoted.sender && m.quoted.sender.endsWith('@lid')) {
-      m.quoted.sender = func.resolveLid(m.quoted.sender, participants)
-    }
-    // daftar admin (pakai jid/phone biar konsisten dgn m.sender yg sudah di-resolve)
-    const adminJids = participants
-      .filter((p) => p.admin === 'admin' || p.admin === 'superadmin')
-      .map((p) => p.jid || p.id)
-    const me = sock.user && sock.user.id ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : ''
-    m.isBotAdmin = adminJids.includes(me)
-    m.isAdmin = adminJids.includes(m.sender)
+    const me = Identity.meIdentity(sock)
+    const botIds = [me.pn, me.lid].filter(Boolean)
+    m.isBotAdmin = botIds.some((id) => adminIds.includes(id))
+    m.isAdmin = adminIds.includes(Identity.bare(m.sender)) || !!(m.lid && adminIds.includes(m.lid))
   }
   m.isOwner = func.isOwner(m.sender, db)
   m.isCmd = !!m.command
@@ -250,14 +280,17 @@ async function handle(sock, db, loader, M) {
       })
     } catch (_) {}
   }
-  // Tag seseorang yang sedang AFK
+  // Tag seseorang yang sedang AFK. Daftar AFK dikunci pakai NOMOR, sedangkan
+  // `mentions` WhatsApp bisa berisi @lid (grup "sembunyikan nomor") -> dicek
+  // dua-duanya supaya tidak ada yang kelewat.
   if (m.isGroup && Array.isArray(m.mentionedJid) && m.mentionedJid.length) {
-    for (const jid of m.mentionedJid) {
-      if (db.data.afk[jid]) {
-        const a = db.data.afk[jid]
+    for (const raw of m.mentionedJid) {
+      const jid = Identity.resolve(raw, { db, participants: m.__participants })
+      const a = db.data.afk[jid] || db.data.afk[raw]
+      if (a) {
         const dur = m.func.uptime(Date.now() - a.time)
         await m
-          .reply(`💤 @${jid.split('@')[0]} sedang *AFK*.\nAlasan: ${a.reason || '-'}\nDurasi: ${dur}`)
+          .reply(`💤 @${Identity.num(jid)} sedang *AFK*.\nAlasan: ${a.reason || '-'}\nDurasi: ${dur}`, { mentions: [raw] })
           .catch(() => {})
       }
     }
@@ -297,8 +330,11 @@ async function handle(sock, db, loader, M) {
 
   if (!m.isCmd) return
 
-  // blacklist
-  if (db.data.blacklist.users.includes(m.sender)) return m.reply('🚫 Kamu diblacklist dari bot.').catch(() => {})
+  // blacklist (identitas utama = nomor; LID mentah ikut dicek supaya entri
+  // lama yang belum sempat dipetakan ke nomor tidak bisa dipakai buat lolos)
+  if (db.data.blacklist.users.includes(m.sender) || (m.lid && db.data.blacklist.users.includes(m.lid))) {
+    return m.reply('🚫 Kamu diblacklist dari bot.').catch(() => {})
+  }
   if (m.isGroup && db.data.blacklist.groups.includes(m.chat)) return
 
   // rate limit

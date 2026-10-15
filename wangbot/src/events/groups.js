@@ -1,5 +1,6 @@
 const config = require('../config')
 const func = require('../lib/func')
+const Identity = require('../lib/identity')
 const logger = require('../lib/logger')
 
 // handler menyimpan cache metadata grup (TTL 60 detik); dibatalkan di sini
@@ -27,19 +28,32 @@ async function handleParticipantsUpdate(sock, db, { id, participants, action }) 
     if (!id || !id.endsWith('@g.us')) return
     const g = db.getGroup(id)
     let subject = 'Grup'
+    // Metadata dipakai sekaligus untuk memetakan peserta ber-`@lid` ke NOMOR
+    // (nama di welcome/goodbye & data pengguna selalu nomor — src/lib/identity.js).
+    let meta = null
     try {
-      const meta = await sock.groupMetadata(id)
+      meta = await sock.groupMetadata(id)
       subject = meta.subject || 'Grup'
     } catch (_) {}
 
-    const cleanParticipants = (participants || []).filter(Boolean)
+    const metaParticipants = meta && Array.isArray(meta.participants) ? meta.participants : []
+    // `mentions` tetap memakai JID asli dari WhatsApp (di grup ber-LID, tag
+    // memang harus LID), tapi data yang disimpan & ditampilkan memakai nomor.
+    const entries = (participants || [])
+      .filter(Boolean)
+      .map((jid) => ({ jid, pn: Identity.resolve(jid, { db, participants: metaParticipants }) }))
+    const cleanParticipants = entries
+    const anyLid = entries.some((e) => Identity.isLid(e.pn))
     invalidateMeta(id) // anggota/admin berubah -> cache lama tidak valid
+    if (anyLid) {
+      logger.info(`Identitas: ${entries.filter((e) => Identity.isLid(e.pn)).length} peserta masih @lid (nomor belum diketahui) di ${subject}`)
+    }
 
     if (action === 'add') {
       logger.join(`JOIN ${subject} +${cleanParticipants.length}`)
-      for (const jid of cleanParticipants) {
-        db.registerUser(jid, '')
-        const vars = { user: jid.split('@')[0], subject }
+      for (const { jid, pn } of cleanParticipants) {
+        db.registerUser(pn, '') // identitas disimpan sebagai NOMOR
+        const vars = { user: Identity.num(pn), subject }
 
         if (g.welcome) {
           const text = fillTemplate(g.welcomeText, vars)
@@ -68,8 +82,8 @@ async function handleParticipantsUpdate(sock, db, { id, participants, action }) 
     } else if (action === 'remove' || action === 'leave') {
       logger.join(`LEAVE ${subject} -${cleanParticipants.length}`)
       if (g.goodbye) {
-        for (const jid of cleanParticipants) {
-          const vars = { user: jid.split('@')[0], subject }
+        for (const { jid, pn } of cleanParticipants) {
+          const vars = { user: Identity.num(pn), subject }
           const text = fillTemplate(g.goodbyeText, vars)
           await sock.sendMessage(id, { text, mentions: [jid] }).catch(() => {})
           await new Promise((r) => setTimeout(r, 400))

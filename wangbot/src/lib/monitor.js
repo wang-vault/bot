@@ -2,12 +2,12 @@ const config = require('../config')
 const logger = require('./logger')
 const Panel = require('./panel')
 const Mc = require('./mc')
+const Identity = require('./identity')
 
-// Menentukan target notifikasi alert
+// Menentukan target notifikasi alert: nomor owner pertama (bukan LID).
 function notifyTarget(db) {
   if (config.monitorNotify && config.monitorNotify.endsWith('@s.whatsapp.net')) return config.monitorNotify
-  const owners = [...config.envOwners, ...(db.data.owners || [])]
-  return owners[0] || null
+  return Identity.ownerJids(db)[0] || null
 }
 
 async function sendAlert(db, sock, text) {

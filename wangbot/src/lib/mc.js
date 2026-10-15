@@ -10,6 +10,7 @@ const config = require('../config')
 const logger = require('./logger')
 const Panel = require('./panel')
 const MC = require('./minecraft')
+const Identity = require('./identity')
 
 function store(db) {
   if (!db.data.minecraft) db.data.minecraft = { entries: {}, servers: {} }
@@ -365,8 +366,9 @@ function num(jid) {
 
 function targetOf(db) {
   if (config.monitorNotify && config.monitorNotify.endsWith('@s.whatsapp.net')) return config.monitorNotify
-  const owners = [...config.envOwners, ...(db.data.owners || [])]
-  return owners[0] || null
+  // Alert admin selalu ke NOMOR owner pertama (entri LID yang belum diketahui
+  // nomornya dilewati — lihat src/lib/identity.js).
+  return Identity.ownerJids(db)[0] || null
 }
 
 // ---------- console command ----------

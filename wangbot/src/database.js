@@ -35,7 +35,15 @@ function defaultGroupSettings() {
 
 const DEFAULT_DB = {
   version: 1,
-  owners: [], // owner tambahan (selain env)
+  owners: [], // owner tambahan (selain env) — SELALU nomor (@s.whatsapp.net)
+  // Pemetaan identitas: WhatsApp kadang mengalamatkan chat sebagai `@lid`
+  // (Linked ID). Bot memakainya hanya sebagai KUNCI pencarian nomor, lalu
+  // menyimpannya di sini supaya tidak perlu menebak lagi. Lihat
+  // src/lib/identity.js. `pending` = LID yang nomornya belum diketahui.
+  identity: {
+    lidToPn: {}, // '123456789012345@lid' -> '6281234567890@s.whatsapp.net'
+    pending: {}, // '123…@lid' -> { name, firstSeen, lastSeen, hits }
+  },
   groups: {}, // jid -> defaultGroupSettings()
   afk: {}, // jid -> { reason, time }
   warnings: {}, // `${group}:${user}` -> { count }
@@ -248,14 +256,22 @@ class Database {
     return this.data.groups[jid]
   }
 
+  /**
+   * Owner selalu identitas NOMOR WhatsApp. Entri `@lid` hanya dianggap owner
+   * bila memang dinyatakan eksplisit (OWNER_LID / OWNER_NUMBER berbentuk LID)
+   * atau sudah punya pemetaan LID -> nomor.
+   */
   isOwner(jid) {
-    const env = require('./config').envOwners
-    return env.includes(jid) || (this.data.owners || []).includes(jid)
+    const Identity = require('./lib/identity')
+    return Identity.isOwnerJid(jid, this)
   }
 
   addOwner(jid) {
-    if (!this.data.owners.includes(jid)) {
-      this.data.owners.push(jid)
+    const Identity = require('./lib/identity')
+    const b = Identity.toJid(jid) // terima JID lengkap maupun nomor mentah
+    if (!b) return false
+    if (!this.data.owners.includes(b)) {
+      this.data.owners.push(b)
       this.save()
       return true
     }
@@ -263,7 +279,9 @@ class Database {
   }
 
   delOwner(jid) {
-    const i = this.data.owners.indexOf(jid)
+    const Identity = require('./lib/identity')
+    const b = Identity.toJid(jid)
+    const i = this.data.owners.indexOf(b)
     if (i >= 0) {
       this.data.owners.splice(i, 1)
       this.save()
